@@ -236,15 +236,29 @@ def fetch_daily_institutional_bulk(target_date: Optional[date] = None) -> int:
 # 大盤指數：加權 + 櫃買
 # ──────────────────────────────────────────────
 
-def fetch_taiex_history(years: int = 10) -> int:
-    """抓取加權指數歷史，以年為單位。"""
+def _month_offset(base: date, months_back: int) -> date:
+    """回傳 base 往前 months_back 個月的月份第一天。"""
+    y, m = base.year, base.month - months_back
+    while m <= 0:
+        m += 12
+        y -= 1
+    return date(y, m, 1)
+
+
+def fetch_taiex_history(months: int = 12) -> int:
+    """抓取加權指數歷史，以月為單位逐月抓取。
+    MI_5MINS_HIST 每次查詢回傳指定月份的每日 OHLC，欄位順序：日期/開/高/低/收。
+    """
     inserted = 0
-    current_year = date.today().year
+    today = date.today()
 
     with get_session() as session:
-        for y in range(current_year, current_year - years, -1):
+        for i in range(months):
+            target = _month_offset(today, i)
+            date_str = target.strftime("%Y%m%d")
+
             url = f"{TWSE_BASE}/indicesReport/MI_5MINS_HIST"
-            params = {"response": "json", "date": f"{y}0101"}
+            params = {"response": "json", "date": date_str}
 
             try:
                 with httpx.Client(headers=HEADERS, timeout=15) as client:
@@ -261,7 +275,7 @@ def fetch_taiex_history(years: int = 10) -> int:
                 try:
                     parts = row[0].split("/")
                     real_date = date(int(parts[0]) + 1911, int(parts[1]), int(parts[2]))
-                    close = float(row[1].replace(",", ""))
+                    close = float(row[4].replace(",", ""))  # row[4] = 收盤價
                     existing = session.execute(
                         select(IndexData).where(
                             IndexData.name == "TAIEX",
@@ -331,7 +345,7 @@ def daily_update() -> dict:
 
     institutional_count = fetch_daily_institutional_bulk(today)
     _sleep()
-    index_count = fetch_taiex_history(years=1)
+    index_count = fetch_taiex_history(months=6)
 
     return {
         "status": "updated",

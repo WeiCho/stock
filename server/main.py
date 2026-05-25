@@ -85,7 +85,7 @@ def market_institutional(top: int = 20, order: str = "desc"):
 
 
 @app.get("/market/index")
-def market_index(days: int = 30):
+def market_index(days: int = 90):
     """加權指數近 N 天走勢。"""
     from sqlalchemy import select
     from db import IndexData, get_session

@@ -216,7 +216,7 @@ def analyze(symbol: str, timeframe: str = "daily") -> dict:
     result = {
         "symbol": symbol,
         "timeframe": timeframe,
-        "date": str(df.index[-1]),
+        "date": str(df.index[-1].date() if hasattr(df.index[-1], "date") else df.index[-1]),
         "close": safe("close"),
         "trend": detect_trend(df, timeframe),
         "ma": {col: safe(col) for col in ma_cols},
