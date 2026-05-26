@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from './api'
 import PriceChart from './components/PriceChart'
 import TechnicalPanel from './components/TechnicalPanel'
@@ -65,6 +65,9 @@ export default function App() {
   const [btSignal, setBtSignal] = useState('ma_cross')
   const [timeframe, setTimeframe] = useState('daily')
   const [view, setView] = useState('market') // 'market' | 'stock'
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchRef = useRef(null)
 
   // 大盤資料
   const market = useAsync(() => Promise.all([
@@ -82,11 +85,40 @@ export default function App() {
 
   const mas = buildMas(price.data, technical.data)
 
+  // 搜尋建議：輸入時查詢
+  useEffect(() => {
+    const q = input.trim()
+    if (!q) { setSuggestions([]); return }
+    const timer = setTimeout(() => {
+      api.searchStock(q, 8).then(r => setSuggestions(r.results || [])).catch(() => setSuggestions([]))
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [input])
+
+  // 點擊外部關閉建議列表
+  useEffect(() => {
+    const handler = (e) => { if (searchRef.current && !searchRef.current.contains(e.target)) setShowSuggestions(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const selectSuggestion = (s) => {
+    setInput(s.symbol)
+    setSuggestions([])
+    setShowSuggestions(false)
+    setSymbol(s.symbol)
+    setView('stock')
+    setActiveTab('技術面')
+  }
+
   const handleSearch = (e) => {
     e.preventDefault()
     const v = input.trim()
     if (!v) return
-    setSymbol(v)
+    setShowSuggestions(false)
+    // 若輸入的是中文且有建議，直接用第一筆
+    const resolved = (!v.match(/^\d/) && suggestions.length > 0) ? suggestions[0].symbol : v
+    setSymbol(resolved)
     setView('stock')
     setActiveTab('技術面')
   }
@@ -99,14 +131,32 @@ export default function App() {
           <button onClick={() => setView('market')} className="text-lg font-bold text-blue-400 hover:text-blue-300 shrink-0">
             台股分析
           </button>
-          <form onSubmit={handleSearch} className="flex gap-2 flex-1 max-w-sm">
-            <input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="輸入股票代碼，如 2330"
-              className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-            />
-            <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded-lg text-sm font-medium">
+          <form onSubmit={handleSearch} className="flex gap-2 flex-1 max-w-sm relative" ref={searchRef}>
+            <div className="flex-1 relative">
+              <input
+                value={input}
+                onChange={e => { setInput(e.target.value); setShowSuggestions(true) }}
+                onFocus={() => setShowSuggestions(true)}
+                placeholder="代碼或中文名稱，如 2330 / 台積電"
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className="absolute top-full mt-1 left-0 w-full bg-slate-800 border border-slate-600 rounded-lg shadow-lg z-50 overflow-hidden">
+                  {suggestions.map(s => (
+                    <li
+                      key={s.symbol}
+                      onMouseDown={() => selectSuggestion(s)}
+                      className="flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-slate-700"
+                    >
+                      <span className="font-medium text-blue-300">{s.symbol}</span>
+                      <span className="text-slate-300 ml-2">{s.name}</span>
+                      <span className="text-slate-500 text-xs ml-auto">{s.market === 'twse' ? '上市' : '上櫃'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded-lg text-sm font-medium shrink-0">
               查詢
             </button>
           </form>

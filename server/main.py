@@ -13,17 +13,29 @@ from data_fetcher import (
     daily_update,
     ensure_stock_data,
     fetch_daily_institutional_bulk,
+    fetch_stock_list,
     get_institutional_df,
     get_price_df,
+    search_stock,
 )
+
+
+def _startup_tasks():
+    daily_update()
+    # 若 stock_names 表是空的則抓一次股票清單
+    from sqlalchemy import select, func
+    from db import StockName, get_session
+    with get_session() as session:
+        count = session.execute(select(func.count()).select_from(StockName)).scalar_one()
+    if count == 0:
+        fetch_stock_list()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # 非阻塞地跑每日更新
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, daily_update)
+    loop.run_in_executor(None, _startup_tasks)
     yield
 
 
@@ -184,6 +196,15 @@ def stock_fundamentals(symbol: str):
     return nf.fetch_fundamentals(symbol)
 
 
+@app.get("/stock/search")
+def stock_search(q: str = "", limit: int = 10):
+    """用股票代碼或中文名稱模糊搜尋，回傳 [{symbol, name, market}]。"""
+    if not q.strip():
+        return {"results": []}
+    results = search_stock(q.strip(), limit=limit)
+    return {"results": results}
+
+
 @app.get("/stock/{symbol}")
 def stock_full(symbol: str, company_name: str = ""):
     """完整個股分析：技術面 + 籌碼面 + 新聞基本面。"""
@@ -244,17 +265,13 @@ def admin_init_all(background_tasks: BackgroundTasks):
 
 def _run_init_all():
     """背景任務：爬取全台股清單並下載個股歷史。"""
-    import httpx
     import time
+    from sqlalchemy import select
+    from db import StockName, get_session
 
-    url = "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=json"
-    try:
-        with httpx.Client(timeout=20) as client:
-            resp = client.get(url)
-            data = resp.json()
-        symbols = [row[0] for row in data.get("data", [])]
-    except Exception:
-        return
+    fetch_stock_list()
+    with get_session() as session:
+        symbols = [r.symbol for r in session.execute(select(StockName)).scalars().all()]
 
     for symbol in symbols:
         ensure_stock_data(symbol)

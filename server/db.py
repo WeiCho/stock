@@ -94,6 +94,17 @@ class SyncLog(Base):
     last_synced = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class StockName(Base):
+    """股票代碼 ↔ 中文名稱對照表（從 TWSE/TPEx 抓取）。"""
+    __tablename__ = "stock_names"
+    __table_args__ = (UniqueConstraint("symbol"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    name = Column(String(50), nullable=False, index=True)
+    market = Column(String(10), nullable=False, default="twse")  # twse | tpex
+
+
 def init_db():
     Base.metadata.create_all(engine)
 

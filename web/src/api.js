@@ -23,4 +23,5 @@ export const api = {
   chipScan: (foreignDays = 3, trustDays = 0, topN = 20) =>
     get('/market/chip-scan', { min_foreign_days: foreignDays, min_trust_days: trustDays, top_n: topN }),
   signals: () => get('/backtest/signals'),
+  searchStock: (q, limit = 10) => get('/stock/search', { q, limit }),
 }

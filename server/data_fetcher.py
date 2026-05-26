@@ -12,7 +12,7 @@ from typing import Optional
 import httpx
 import pandas as pd
 from sqlalchemy import select, delete
-from db import DailyPrice, Institutional, IndexData, SyncLog, get_session
+from db import DailyPrice, Institutional, IndexData, SyncLog, StockName, get_session
 
 TWSE_BASE = "https://www.twse.com.tw"
 TPEX_BASE = "https://www.tpex.org.tw"
@@ -424,3 +424,90 @@ def ensure_stock_data(symbol: str) -> bool:
         fetch_stock_history(symbol, years=10, market=market)
 
     return True
+
+
+# ──────────────────────────────────────────────
+# 股票清單（代碼 ↔ 中文名稱）
+# ──────────────────────────────────────────────
+
+def fetch_stock_list() -> int:
+    """
+    從 TWSE 與 TPEx 抓取全部掛牌股票清單，寫入 stock_names 表。
+    回傳寫入筆數。
+    """
+    stocks: list[dict] = []
+
+    # 上市（TWSE）
+    try:
+        url = f"{TWSE_BASE}/exchangeReport/STOCK_DAY_ALL"
+        with httpx.Client(headers=HEADERS, timeout=20) as client:
+            resp = client.get(url, params={"response": "json"})
+            resp.raise_for_status()
+            data = resp.json()
+        for row in data.get("data", []):
+            symbol = row[0].strip()
+            name = row[1].strip()
+            if symbol and name:
+                stocks.append({"symbol": symbol, "name": name, "market": "twse"})
+    except Exception:
+        pass
+
+    _sleep()
+
+    # 上櫃（TPEx）
+    try:
+        url = f"{TPEX_BASE}/www/zh-tw/afterTrading/otc_quotes_no1430.htm"
+        with httpx.Client(headers=HEADERS, timeout=20) as client:
+            resp = client.get(url, params={"l": "zh-tw", "se": "EW", "o": "json"})
+            resp.raise_for_status()
+            data = resp.json()
+        for row in data.get("aaData", []):
+            symbol = str(row[0]).strip()
+            name = str(row[1]).strip()
+            if symbol and name:
+                stocks.append({"symbol": symbol, "name": name, "market": "tpex"})
+    except Exception:
+        pass
+
+    if not stocks:
+        return 0
+
+    with get_session() as session:
+        existing = {r.symbol for r in session.execute(select(StockName)).scalars().all()}
+        new_records = [
+            StockName(symbol=s["symbol"], name=s["name"], market=s["market"])
+            for s in stocks if s["symbol"] not in existing
+        ]
+        # 更新已存在的名稱
+        for s in stocks:
+            if s["symbol"] in existing:
+                rec = session.execute(
+                    select(StockName).where(StockName.symbol == s["symbol"])
+                ).scalar_one_or_none()
+                if rec and rec.name != s["name"]:
+                    rec.name = s["name"]
+        session.add_all(new_records)
+        session.commit()
+
+    return len(stocks)
+
+
+def search_stock(query: str, limit: int = 10) -> list[dict]:
+    """
+    用代碼或中文名稱模糊搜尋股票，回傳 [{symbol, name, market}]。
+    """
+    q = query.strip()
+    with get_session() as session:
+        if q.isdigit():
+            rows = session.execute(
+                select(StockName)
+                .where(StockName.symbol.like(f"{q}%"))
+                .limit(limit)
+            ).scalars().all()
+        else:
+            rows = session.execute(
+                select(StockName)
+                .where(StockName.name.like(f"%{q}%"))
+                .limit(limit)
+            ).scalars().all()
+    return [{"symbol": r.symbol, "name": r.name, "market": r.market} for r in rows]
