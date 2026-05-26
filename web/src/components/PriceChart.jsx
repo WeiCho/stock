@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createChart } from 'lightweight-charts'
+import { createChart, CandlestickSeries, LineSeries } from 'lightweight-charts'
 
 export default function PriceChart({ data, mas = {} }) {
   const containerRef = useRef(null)
@@ -19,7 +19,7 @@ export default function PriceChart({ data, mas = {} }) {
     })
     chartRef.current = chart
 
-    const candle = chart.addCandlestickSeries({
+    const candle = chart.addSeries(CandlestickSeries, {
       upColor: '#ef4444', downColor: '#22c55e',
       borderUpColor: '#ef4444', borderDownColor: '#22c55e',
       wickUpColor: '#ef4444', wickDownColor: '#22c55e',
@@ -31,7 +31,7 @@ export default function PriceChart({ data, mas = {} }) {
     const MA_COLORS = { ma5: '#f59e0b', ma10: '#a78bfa', ma20: '#38bdf8', ma60: '#fb7185', ma120: '#4ade80', ma240: '#f97316' }
     Object.entries(mas).forEach(([key, values]) => {
       if (!values?.length) return
-      const s = chart.addLineSeries({ color: MA_COLORS[key] ?? '#888', lineWidth: 1, priceLineVisible: false })
+      const s = chart.addSeries(LineSeries, { color: MA_COLORS[key] ?? '#888', lineWidth: 1, priceLineVisible: false })
       s.setData(values)
     })
 

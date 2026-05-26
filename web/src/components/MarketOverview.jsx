@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createChart } from 'lightweight-charts'
+import { createChart, AreaSeries } from 'lightweight-charts'
 
 function IndexChart({ data }) {
   const ref = useRef(null)
@@ -13,7 +13,7 @@ function IndexChart({ data }) {
       width: ref.current.clientWidth,
       height: 180,
     })
-    const line = chart.addAreaSeries({ lineColor: '#38bdf8', topColor: 'rgba(56,189,248,0.2)', bottomColor: 'transparent', lineWidth: 2 })
+    const line = chart.addSeries(AreaSeries, { lineColor: '#38bdf8', topColor: 'rgba(56,189,248,0.2)', bottomColor: 'transparent', lineWidth: 2 })
     line.setData(data.map(r => ({ time: r.date, value: r.close })))
     chart.timeScale().fitContent()
     const obs = new ResizeObserver(() => chart.applyOptions({ width: ref.current.clientWidth }))

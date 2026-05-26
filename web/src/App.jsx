@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from './api'
 import PriceChart from './components/PriceChart'
 import TechnicalPanel from './components/TechnicalPanel'
