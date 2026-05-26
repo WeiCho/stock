@@ -4,3 +4,5 @@ __pycache__/
 stocks.db
 pine_output/
 .env
+web/node_modules
+web/dist
