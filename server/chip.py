@@ -183,11 +183,12 @@ def scan_bulk(
         t_consec = _count_consecutive(df["trust"])
         total_5d = df["total"].tail(5).sum()
 
-        if f_consec < min_foreign_days:
+        # 門檻為 0 時代表「不過濾該維度」，避免把賣超（負連續天數）的股票一併濾掉
+        if min_foreign_days > 0 and f_consec < min_foreign_days:
             continue
-        if t_consec < min_trust_days:
+        if min_trust_days > 0 and t_consec < min_trust_days:
             continue
-        if total_5d < min_total_5d:
+        if min_total_5d and total_5d < min_total_5d:
             continue
 
         results.append({

@@ -1,12 +1,15 @@
 import os
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy import (
     create_engine, Column, String, Integer, Float, Date, DateTime,
     Boolean, Text, UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, Session
 
-DB_PATH = os.path.expanduser("~/.claude/skills/taiwan-stock/stocks.db")
+# 資料庫位於專案根目錄（server/ 的上一層），可用 TAIWAN_STOCK_DB 覆寫。
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = os.environ.get("TAIWAN_STOCK_DB", str(REPO_ROOT / "stocks.db"))
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 
 

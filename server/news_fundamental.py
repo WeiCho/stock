@@ -1,82 +1,97 @@
 """
 新聞面 + 基本面模組
-新聞：RSS 爬蟲（鉅亨網 / Yahoo Finance TW / MOPS）
-基本面：FinMind 免費 API + TWSE 財報
+新聞：Google News RSS（依公司名稱查詢近 30 天；原 cnyes/Yahoo 一般版 RSS 已失效）
+基本面：FinMind 免費 API
 """
 
-import re
+import ssl
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 import httpx
 import feedparser
 from sqlalchemy import select
-from db import NewsCache, get_session
+from db import NewsCache, StockName, get_session
 
 FINMIND_BASE = "https://api.finmindtrade.com/api/v4/data"
+GOOGLE_NEWS_URL = "https://news.google.com/rss/search"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TaiwanStockBot/1.0)"}
+# Google News 會擋非瀏覽器 UA，另備一個瀏覽器 UA
+BROWSER_UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
 
-RSS_SOURCES = [
-    "https://www.cnyes.com/rss/cat/tw_stock",
-    "https://tw.stock.yahoo.com/rss",
-]
+# OpenSSL3（Python 3.13+）放寬 X509 嚴格檢查（與 data_fetcher 一致），仍完整驗證憑證
+try:
+    import certifi
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CTX = ssl.create_default_context()
+_SSL_CTX.verify_flags &= ~ssl.VERIFY_X509_STRICT
 
 
 # ──────────────────────────────────────────────
 # 新聞
 # ──────────────────────────────────────────────
 
-def fetch_news(symbol: str, company_name: str = "", limit: int = 10) -> list[dict]:
-    """爬取 RSS 新聞，依 symbol 或 company_name 過濾，寫入快取後回傳。"""
-    keywords = [symbol]
+def _resolve_company_name(symbol: str, company_name: str = "") -> str:
+    """補上公司名稱：未提供時從 stock_names 反查，查無則退回代碼。"""
     if company_name:
-        keywords.append(company_name)
+        return company_name
+    with get_session() as session:
+        rec = session.execute(
+            select(StockName).where(StockName.symbol == symbol)
+        ).scalar_one_or_none()
+    return rec.name if rec else symbol
+
+
+def fetch_news(symbol: str, company_name: str = "", limit: int = 10) -> list[dict]:
+    """以 Google News RSS 依公司名稱搜尋近 30 天新聞，寫入快取後回傳。"""
+    query = _resolve_company_name(symbol, company_name)
 
     fresh_news = []
-    for rss_url in RSS_SOURCES:
-        try:
-            feed = feedparser.parse(rss_url)
-            for entry in feed.entries:
-                title = entry.get("title", "")
-                if not any(kw in title for kw in keywords):
-                    continue
+    try:
+        params = {"q": f"{query} when:30d", "hl": "zh-TW", "gl": "TW", "ceid": "TW:zh-Hant"}
+        # retries=2 讓連線層失敗（ConnectTimeout 等）自動重試，提高 Google News 取得率
+        transport = httpx.HTTPTransport(retries=2, verify=_SSL_CTX)
+        with httpx.Client(headers=BROWSER_UA, timeout=20,
+                          follow_redirects=True, transport=transport) as client:
+            resp = client.get(GOOGLE_NEWS_URL, params=params)
+            resp.raise_for_status()
+        feed = feedparser.parse(resp.content)
+        for entry in feed.entries:
+            title = entry.get("title", "").strip()
+            if not title:
+                continue
 
-                pub = entry.get("published_parsed")
-                if pub:
-                    pub_dt = datetime(*pub[:6], tzinfo=timezone.utc)
-                else:
-                    pub_dt = datetime.now(timezone.utc)
+            pub = entry.get("published_parsed")
+            pub_dt = datetime(*pub[:6], tzinfo=timezone.utc) if pub else datetime.now(timezone.utc)
+            if pub_dt < datetime.now(timezone.utc) - timedelta(days=30):
+                continue
 
-                # 只取近 30 天
-                if pub_dt < datetime.now(timezone.utc) - timedelta(days=30):
-                    continue
+            is_major = any(w in title for w in [
+                "法說", "財報", "EPS", "配息", "董事會", "重大", "停牌", "下市", "減資", "增資"
+            ])
 
-                is_major = any(w in title for w in [
-                    "法說", "財報", "EPS", "配息", "董事會", "重大", "停牌", "下市"
-                ])
+            fresh_news.append({
+                "symbol": symbol,
+                "title": title,
+                "url": entry.get("link", ""),
+                "published_at": pub_dt.replace(tzinfo=None),
+                "sentiment": None,
+                "is_major": is_major,
+                "summary": None,
+            })
+    except Exception:
+        pass
 
-                fresh_news.append({
-                    "symbol": symbol,
-                    "title": title,
-                    "url": entry.get("link", ""),
-                    "published_at": pub_dt.replace(tzinfo=None),
-                    "sentiment": None,
-                    "is_major": is_major,
-                    "summary": None,
-                })
-        except Exception:
-            continue
-
-    # 寫入快取（去重）
+    # 寫入快取（一次查出已存在標題，批次去重）
     with get_session() as session:
+        existing_titles = set(session.execute(
+            select(NewsCache.title).where(NewsCache.symbol == symbol)
+        ).scalars().all())
         for item in fresh_news:
-            existing = session.execute(
-                select(NewsCache).where(
-                    NewsCache.symbol == symbol,
-                    NewsCache.title == item["title"],
-                )
-            ).scalar_one_or_none()
-            if existing is None:
-                session.add(NewsCache(**item))
+            if item["title"] in existing_titles:
+                continue
+            existing_titles.add(item["title"])
+            session.add(NewsCache(**item))
         session.commit()
 
         # 讀快取回傳

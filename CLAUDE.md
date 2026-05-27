@@ -18,7 +18,8 @@ taiwan-stock/
 ├── server/                # FastAPI 後端
 │   ├── main.py            # API 路由（localhost:8000）
 │   ├── db.py              # SQLAlchemy models + SQLite init
-│   ├── data_fetcher.py    # TWSE/TPEx 爬蟲（含 _month_offset 修正）
+│   ├── data_fetcher.py    # TWSE/TPEx 抓取（OpenAPI/HTTP、曆月回補、市場別判斷）
+│   ├── indicators.py      # 技術指標（純 pandas 實作，取代停止維護的 pandas-ta）
 │   ├── technical.py       # 技術指標計算與形態偵測
 │   ├── chip.py            # 三大法人籌碼分析
 │   ├── backtest.py        # 訊號勝率回測引擎
@@ -91,14 +92,14 @@ python main.py "今天加權指數"
 
 ### 資料來源分工
 
-| 資料類型 | 來源 | Fugle Token 消耗 |
+| 資料類型 | 來源 | 費用 |
 |---------|------|:--------------:|
-| 個股歷史日K（10年） | TWSE/TPEx HTTP 爬蟲 | 否 |
-| 三大法人每日 bulk | TWSE T86 endpoint | 否 |
-| 加權指數歷史 | TWSE MI_5MINS_HIST（按月抓取） | 否 |
-| 基本面（EPS/PER/ROE） | FinMind 免費 API | 否 |
-| 新聞 | 鉅亨網 RSS / Yahoo Finance RSS | 否 |
-| 盤中即時報價 | Fugle Market Data API | **是**（保留用途） |
+| 個股歷史日K（10年） | TWSE STOCK_DAY／TPEx tradingStock | 免費 |
+| 三大法人每日 bulk | TWSE T86 endpoint | 免費 |
+| 加權指數歷史 | TWSE MI_5MINS_HIST（按月抓取） | 免費 |
+| 股票清單（含市場別） | TWSE STOCK_DAY_ALL／TPEx OpenAPI | 免費 |
+| 基本面（EPS/PER/ROE） | FinMind 免費 API | 免費（有額度） |
+| 新聞 | 鉅亨網 RSS / Yahoo Finance RSS | 免費 |
 
 ### SQLite 表格
 
@@ -146,13 +147,21 @@ python main.py "今天加權指數"
 
 - `fetch_taiex_history(months)` — 按月抓取，`row[4]` 為收盤價（非 `row[1]`）
 - `_month_offset(base, n)` — 正確計算月份偏移，避免跨年問題
-- `daily_update()` — 啟動時抓三大法人 bulk + 指數近 6 個月補漏
+- `fetch_stock_history()` — 以 `_month_offset` 按曆月抓取、批次去重，僅在抓到資料時才記錄同步
+- `ensure_stock_data()` — 依 `stock_names` 市場別決定 TWSE/TPEx 抓取順序，查無清單則兩者皆試
+- `daily_update()` — 啟動時以 `backfill_institutional()` 回補最近數個交易日法人 + 指數近 6 個月補漏
 
 ## 注意事項
 
 - `stocks.db` 和 `pine_output/` 已加入 `.gitignore`，勿手動 commit
 - TWSE/TPEx 爬蟲每次請求間隔 1.2 秒（`REQUEST_DELAY`），避免被封鎖
 - FinMind 免費 API 有每日請求額度限制
+- 技術指標由 `indicators.py` 自行以 pandas 實作（SMA/RSI/MACD/KD/布林），不再相依 pandas-ta
+  （其在 numpy≥2 匯入失敗），可在 Python 3.14 + numpy 2 + pandas 3 執行
+- TPEx 改用新版端點：個股歷史 `tradingStock`、股票清單 OpenAPI `tpex_mainboard_daily_close_quotes`
+  （舊的 `st43_print.php`／`otc_quotes_no1430.htm` 已停用）；因 TPEx 憑證鏈缺少 SKI，連線時放寬
+  OpenSSL3 的 `VERIFY_X509_STRICT`（仍完整驗證憑證與主機名稱）
+- DB 與 `pine_output` 路徑取自專案根目錄，可用環境變數 `TAIWAN_STOCK_DB`／`TAIWAN_STOCK_PINE_DIR` 覆寫
 - lightweight-charts 版本為 **v5**，series 用 `chart.addSeries(SeriesClass, opts)`，
   舊的 `addCandlestickSeries()` / `addLineSeries()` 在 v5 已移除
 - 資料僅供個人研究，不得用於自動下單

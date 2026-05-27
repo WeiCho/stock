@@ -186,7 +186,7 @@ def call(path: str, params: dict = None) -> dict:
     except httpx.ConnectError:
         return {
             "error": "無法連線到 Taiwan Stock server（localhost:8000）",
-            "hint": "請先啟動：cd ~/.claude/skills/taiwan-stock && source .venv/bin/activate && PYTHONPATH=server uvicorn server.main:app --host 0.0.0.0 --port 8000",
+            "hint": "請先啟動後端：在專案根目錄執行 source .venv/bin/activate && PYTHONPATH=server uvicorn server.main:app --host 0.0.0.0 --port 8000",
         }
     except httpx.HTTPStatusError as e:
         return {"error": f"API 錯誤 {e.response.status_code}", "detail": e.response.text}

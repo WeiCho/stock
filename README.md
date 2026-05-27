@@ -1,6 +1,6 @@
 # 台股分析 Skill
 
-用自然語言查台股，整合技術面、籌碼面、10 年回測、新聞基本面，並產出 TradingView Pine Script。提供 CLI 與 React Web App 兩種介面，共用 FastAPI 後端，所有資料來自 TWSE / TPEx 官方開放資料，無需付費 API。
+用自然語言查台股，整合技術面、籌碼面、10 年回測、新聞基本面，並產出 TradingView Pine Script。提供 CLI 與 React Web App 兩種介面，共用 FastAPI 後端；行情與籌碼來自 TWSE / TPEx 官方開放資料，基本面用 FinMind、新聞用 Google News，皆無需付費 API。
 
 ## 安裝
 
@@ -65,7 +65,7 @@ python main.py "分析台積電"
 | 籌碼面 | 外資 / 投信 / 自營商買賣超，連買天數，5/10/20 日累計 |
 | 回測 | 9 種訊號的 10 年勝率統計，後續 5/10/20/60 天報酬率 |
 | Pine Script | 回測結果自動生成 TradingView v5 策略程式碼 |
-| 新聞 | RSS 彙整（鉅亨網 / Yahoo Finance），標注重大訊息 |
+| 新聞 | Google News 依公司名稱彙整近 30 天，標注重大訊息 |
 | 基本面 | EPS、本益比、殖利率、營收月增 / 年增（FinMind） |
 
 ### 大盤 / 市場
@@ -114,9 +114,9 @@ curl -X POST "http://localhost:8000/admin/init-all"
 | 個股歷史日K | TWSE / TPEx 官方開放資料 | 免費 |
 | 三大法人每日 | TWSE T86 endpoint | 免費 |
 | 加權指數歷史 | TWSE MI_5MINS_HIST（按月抓取） | 免費 |
+| 股票清單（含市場別） | TWSE STOCK_DAY_ALL / TPEx OpenAPI | 免費 |
 | 基本面（EPS / PER） | FinMind 免費 API | 免費（有額度限制） |
-| 新聞 | 鉅亨網 RSS / Yahoo Finance TW RSS | 免費 |
-| 盤中即時報價 | Fugle Market Data API | 免費額度 |
+| 新聞 | Google News RSS（依公司名稱查詢） | 免費 |
 
 ## 注意事項
 

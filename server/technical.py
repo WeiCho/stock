@@ -5,7 +5,7 @@
 
 from datetime import date
 import pandas as pd
-import pandas_ta as ta
+import indicators as ind
 from data_fetcher import get_price_df, ensure_stock_data
 
 
@@ -40,36 +40,28 @@ def calc_indicators(df: pd.DataFrame, timeframe: str = "daily") -> pd.DataFrame:
 
     for p in ma_periods:
         if len(df) >= p:
-            df[f"ma{p}"] = ta.sma(df["close"], length=p)
+            df[f"ma{p}"] = ind.sma(df["close"], p)
 
     if len(df) >= 14:
-        df["rsi"] = ta.rsi(df["close"], length=14)
+        df["rsi"] = ind.rsi(df["close"], 14)
 
     if len(df) >= 26:
-        macd = ta.macd(df["close"], fast=12, slow=26, signal=9)
-        if macd is not None:
-            df["macd"] = macd["MACD_12_26_9"]
-            df["macd_signal"] = macd["MACDs_12_26_9"]
-            df["macd_hist"] = macd["MACDh_12_26_9"]
+        macd = ind.macd(df["close"], fast=12, slow=26, signal=9)
+        df["macd"] = macd["macd"]
+        df["macd_signal"] = macd["signal"]
+        df["macd_hist"] = macd["hist"]
 
     if len(df) >= 9:
-        stoch = ta.stoch(df["high"], df["low"], df["close"], k=9, d=3, smooth_k=3)
-        if stoch is not None:
-            df["kd_k"] = stoch["STOCHk_9_3_3"]
-            df["kd_d"] = stoch["STOCHd_9_3_3"]
+        stoch = ind.stoch(df["high"], df["low"], df["close"], k=9, d=3, smooth_k=3)
+        df["kd_k"] = stoch["k"]
+        df["kd_d"] = stoch["d"]
 
     if len(df) >= 20:
-        bb = ta.bbands(df["close"], length=20, std=2)
-        if bb is not None:
-            # 欄位名稱依 pandas-ta 版本可能為 BBU_20_2.0 或 BBU_20_2.0_2.0
-            upper_col = next((c for c in bb.columns if c.startswith("BBU")), None)
-            mid_col = next((c for c in bb.columns if c.startswith("BBM")), None)
-            lower_col = next((c for c in bb.columns if c.startswith("BBL")), None)
-            if upper_col and mid_col and lower_col:
-                df["bb_upper"] = bb[upper_col]
-                df["bb_mid"] = bb[mid_col]
-                df["bb_lower"] = bb[lower_col]
-                df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["bb_mid"]
+        bb = ind.bbands(df["close"], length=20, std=2)
+        df["bb_upper"] = bb["upper"]
+        df["bb_mid"] = bb["mid"]
+        df["bb_lower"] = bb["lower"]
+        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["bb_mid"]
 
     if len(df) >= 5:
         df["vol_ma5"] = df["volume"].rolling(5).mean()
@@ -91,7 +83,7 @@ def detect_signals(df: pd.DataFrame, timeframe: str = "daily") -> list[dict]:
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    ma_short = "ma20" if timeframe == "daily" else "ma20"
+    ma_short = "ma20"
     ma_long = "ma60" if timeframe == "daily" else "ma52"
 
     # 黃金交叉（MA20 穿越 MA60 / MA52）

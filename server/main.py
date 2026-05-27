@@ -2,7 +2,6 @@
 
 from contextlib import asynccontextmanager
 from datetime import date
-from typing import Optional
 import asyncio
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -12,9 +11,7 @@ from db import init_db
 from data_fetcher import (
     daily_update,
     ensure_stock_data,
-    fetch_daily_institutional_bulk,
     fetch_stock_list,
-    get_institutional_df,
     get_price_df,
     search_stock,
 )
@@ -22,12 +19,15 @@ from data_fetcher import (
 
 def _startup_tasks():
     daily_update()
-    # 若 stock_names 表是空的則抓一次股票清單
+    # 股票清單為空、或缺少上櫃資料（舊版抓取失敗）時，重新抓一次清單
     from sqlalchemy import select, func
     from db import StockName, get_session
     with get_session() as session:
-        count = session.execute(select(func.count()).select_from(StockName)).scalar_one()
-    if count == 0:
+        total = session.execute(select(func.count()).select_from(StockName)).scalar_one()
+        tpex = session.execute(
+            select(func.count()).select_from(StockName).where(StockName.market == "tpex")
+        ).scalar_one()
+    if total == 0 or tpex == 0:
         fetch_stock_list()
 
 
