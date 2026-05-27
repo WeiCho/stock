@@ -108,6 +108,16 @@ class StockName(Base):
     market = Column(String(10), nullable=False, default="twse")  # twse | tpex
 
 
+class StockIndustry(Base):
+    """股票代碼 ↔ 產業別對照（來自 FinMind TaiwanStockInfo），供類股資金流向統計。"""
+    __tablename__ = "stock_industry"
+    __table_args__ = (UniqueConstraint("symbol"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    industry = Column(String(40), nullable=False, index=True)
+
+
 def init_db():
     Base.metadata.create_all(engine)
 

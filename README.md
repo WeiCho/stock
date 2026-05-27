@@ -14,18 +14,35 @@ pip install -r requirements.txt
 cd web && npm install && cd ..
 ```
 
+### 盤中即時報價 / 大單敲進（選用）
+
+複製 `.env.example` 為 `.env`，填入 [Fugle Market Data](https://developer.fugle.tw/) 的 API key：
+
+```bash
+cp .env.example .env   # 編輯 .env，填入 FUGLE_API_KEY
+```
+
+沒有 key 也能用其餘所有功能（行情、法人、回測、綜合研判…皆免費）；有 key 才會啟用首頁的「🔥 大單敲進」盤中逐筆偵測。
+
 ## 啟動
+
+### 一鍵啟動（推薦）
+
+```bash
+./start.sh
+```
+
+首次執行自動建立 Python 虛擬環境、安裝前後端相依，接著同時啟動後端（`:8000`）與前端（`:5173`），macOS 會自動開啟瀏覽器；按 `Ctrl+C` 一併關閉。要分開手動啟動見下方。
 
 ### 後端（必要）
 
 ```bash
-cd ~/.claude/skills/taiwan-stock
 source .venv/bin/activate
 PYTHONPATH=server uvicorn server.main:app --host 0.0.0.0 --port 8000
 ```
 
 啟動後自動下載今日三大法人資料與近 6 個月加權指數。
-**第一次查詢某支股票**會自動下載該股 10 年歷史（約 5–15 秒）。
+**第一次查詢某支股票**會自動下載該股 10 年歷史（透過 FinMind 一次抓取，約 1–2 秒；FinMind 不可用時改用 TWSE/TPEx 逐月爬取，較慢）。
 
 ### 前端 Web App
 
@@ -61,6 +78,7 @@ python main.py "分析台積電"
 
 | 功能 | 說明 |
 |------|------|
+| 綜合研判 | 結合技術面、籌碼面、10 年回測的方向研判（偏多/中性/偏空）與預期區間 |
 | 技術面 | 日K / 週K 均線（MA5~240）、RSI、MACD、KD、布林通道，自動偵測形態 |
 | 籌碼面 | 外資 / 投信 / 自營商買賣超，連買天數，5/10/20 日累計 |
 | 回測 | 9 種訊號的 10 年勝率統計，後續 5/10/20/60 天報酬率 |
@@ -72,8 +90,11 @@ python main.py "分析台積電"
 
 | 功能 | 說明 |
 |------|------|
-| 加權指數 | 近期走勢（預設 90 天） |
-| 三大法人排行 | 全市場最新交易日買超 / 賣超排行 |
+| 加權指數 | 即時走勢（盤中每 20 秒更新）+ 時間區間 3日/1月/3月/6月/1年/5年 + 近 5 / 20 日漲跌 |
+| 法人資金動向 | 外資 / 投信 / 自營商當日淨買賣超 + 外資・投信買超／賣超排行（盤後） |
+| 類股資金流向 | 依產業別彙總三大法人淨買賣超，看資金流入 / 流出哪些類股（盤後） |
+| 盤後大盤統計 | 成交金額、漲跌家數（盤後） |
+| 大單敲進 | 盤中逐筆偵測法人買超股的單筆大額成交（需 Fugle key，見下方設定） |
 | 籌碼掃描 | 外資 / 投信連買 N 天以上的股票清單 |
 
 ## 支援的回測訊號
@@ -111,12 +132,15 @@ curl -X POST "http://localhost:8000/admin/init-all"
 
 | 資料 | 來源 | 費用 |
 |------|------|------|
-| 個股歷史日K | TWSE / TPEx 官方開放資料 | 免費 |
+| 個股歷史日K（10年） | FinMind（首選，一次抓取）／ TWSE·TPEx 爬蟲（備援） | 免費 |
 | 三大法人每日 | TWSE T86 endpoint | 免費 |
-| 加權指數歷史 | TWSE MI_5MINS_HIST（按月抓取） | 免費 |
+| 加權指數歷史（5年） | FinMind（首選）／ TWSE MI_5MINS_HIST（備援，按月） | 免費 |
+| 即時加權指數 | TWSE MIS（盤中即時） | 免費 |
 | 股票清單（含市場別） | TWSE STOCK_DAY_ALL / TPEx OpenAPI | 免費 |
+| 產業別（類股分類） | FinMind TaiwanStockInfo | 免費 |
 | 基本面（EPS / PER） | FinMind 免費 API | 免費（有額度限制） |
 | 新聞 | Google News RSS（依公司名稱查詢） | 免費 |
+| 盤中逐筆 / 大單敲進 | Fugle Market Data API | 免費額度（需 API key，選用） |
 
 ## 注意事項
 

@@ -62,6 +62,7 @@ npm run dev   # → http://localhost:5173
 | GET | `/stock/{symbol}` | 完整個股分析 |
 | GET | `/stock/{symbol}/price` | 個股日K OHLCV（?days=120） |
 | GET | `/stock/{symbol}/technical` | 技術面（?timeframe=daily\|weekly） |
+| GET | `/stock/{symbol}/outlook` | 綜合研判（技術+籌碼+回測 → 方向、依據、預期區間） |
 | GET | `/stock/{symbol}/chip` | 籌碼面 |
 | GET | `/stock/{symbol}/backtest` | 回測（?signal=ma_cross） |
 | GET | `/stock/{symbol}/pine` | 輸出 Pine Script |
@@ -70,6 +71,8 @@ npm run dev   # → http://localhost:5173
 | GET | `/market/institutional` | 三大法人全市場排行 |
 | GET | `/market/chip-scan` | 全市場籌碼掃描（?min_foreign_days=3） |
 | GET | `/market/index` | 加權指數走勢（預設 90 天） |
+| GET | `/market/index/live` | 即時加權指數（TWSE MIS，盤中更新） |
+| GET | `/market/money-flow` | 法人資金動向 + 盤後大盤統計（漲跌家數/成交金額） |
 | GET | `/backtest/signals` | 支援的回測訊號清單 |
 | POST | `/admin/init-all` | 觸發全台股歷史資料下載（背景，約 1-2 小時） |
 
@@ -94,7 +97,7 @@ python main.py "今天加權指數"
 
 | 資料類型 | 來源 | 費用 |
 |---------|------|:--------------:|
-| 個股歷史日K（10年） | TWSE STOCK_DAY／TPEx tradingStock | 免費 |
+| 個股歷史日K（10年） | FinMind（首選，單一請求）／TWSE STOCK_DAY·TPEx tradingStock（備援） | 免費 |
 | 三大法人每日 bulk | TWSE T86 endpoint | 免費 |
 | 加權指數歷史 | TWSE MI_5MINS_HIST（按月抓取） | 免費 |
 | 股票清單（含市場別） | TWSE STOCK_DAY_ALL／TPEx OpenAPI | 免費 |
@@ -113,7 +116,7 @@ python main.py "今天加權指數"
 ### 資料下載策略（三層）
 
 1. **每日 bulk（自動）** — server 啟動時檢查，自動抓三大法人 + 指數近 6 個月
-2. **on-demand（個股）** — 第一次查詢某支股票時觸發 10 年歷史下載（約 5-15 秒）
+2. **on-demand（個股）** — 第一次查詢某支股票時觸發 10 年歷史下載；首選 FinMind 單一請求（約 1-2 秒），失敗才退回 TWSE/TPEx 逐月爬取
 3. **`/admin/init-all`（選用）** — 觸發全台股 ~2500 支歷史下載，低基期選股用
 
 ## 分析模組說明
@@ -148,7 +151,7 @@ python main.py "今天加權指數"
 - `fetch_taiex_history(months)` — 按月抓取，`row[4]` 為收盤價（非 `row[1]`）
 - `_month_offset(base, n)` — 正確計算月份偏移，避免跨年問題
 - `fetch_stock_history()` — 以 `_month_offset` 按曆月抓取、批次去重，僅在抓到資料時才記錄同步
-- `ensure_stock_data()` — 依 `stock_names` 市場別決定 TWSE/TPEx 抓取順序，查無清單則兩者皆試
+- `ensure_stock_data()` — 首選 `fetch_finmind_price_history()` 一次抓完；失敗才依 `stock_names` 市場別逐月爬 TWSE/TPEx（查無清單則兩者皆試）
 - `daily_update()` — 啟動時以 `backfill_institutional()` 回補最近數個交易日法人 + 指數近 6 個月補漏
 
 ## 注意事項

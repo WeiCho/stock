@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty'); case \"$f\" in *.py) p=./.venv/bin/python; [ -x \"$p\" ] || p=python3; e=$(\"$p\" -m py_compile \"$f\" 2>&1) || jq -n --arg f \"$f\" --arg e \"$e\" '{decision:\"block\",reason:(\"py_compile 失敗：\" + $f + \"\\n\" + $e)}';; esac",
+            "statusMessage": "py_compile 檢查…",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

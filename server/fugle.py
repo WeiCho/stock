@@ -1,0 +1,99 @@
+"""
+Fugle Market Data：盤中即時報價 / 逐筆成交，用來偵測「大單敲進」。
+
+Token 由環境變數 FUGLE_API_KEY 提供（亦會從專案根目錄 .env 讀取）。
+逐筆 /intraday/trades 一次回最近 ~500 筆；盤中輪詢即可即時抓到大單，
+非交易時段則回最後一盤的成交。收盤集合競價（serial 99999999）會排除。
+"""
+
+import asyncio
+import os
+import ssl
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+import httpx
+
+FUGLE_BASE = "https://api.fugle.tw/marketdata/v1.0/stock"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_AUCTION_SERIAL = 99999999
+_TW = timezone(timedelta(hours=8))
+
+
+def _tw_hhmm(epoch_us) -> int | None:
+    """epoch 微秒 → 台北時間的 HHMM（例如 930 = 09:30）。"""
+    try:
+        dt = datetime.fromtimestamp(epoch_us / 1_000_000, _TW)
+        return dt.hour * 100 + dt.minute
+    except Exception:
+        return None
+
+try:
+    import certifi
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CTX = ssl.create_default_context()
+_SSL_CTX.verify_flags &= ~ssl.VERIFY_X509_STRICT
+
+
+def _api_key() -> str | None:
+    key = os.environ.get("FUGLE_API_KEY")
+    if key:
+        return key
+    env = _REPO_ROOT / ".env"
+    if env.exists():
+        for line in env.read_text(encoding="utf-8").splitlines():
+            if line.startswith("FUGLE_API_KEY="):
+                return line.split("=", 1)[1].strip()
+    return None
+
+
+def available() -> bool:
+    return bool(_api_key())
+
+
+def _big_from_trades(data: dict, min_amount: int) -> list[dict]:
+    """從逐筆資料挑出大單：排除集合競價（serial 99999999）與開盤(09:00)/收盤(>=13:25)時段。"""
+    out = []
+    for t in (data.get("data") or []):
+        if t.get("serial") == _AUCTION_SERIAL:
+            continue
+        hm = _tw_hhmm(t.get("time"))
+        if hm is None or hm <= 900 or hm >= 1325:  # 只取盤中連續交易
+            continue
+        size = t.get("size") or 0       # 張
+        price = t.get("price") or 0     # 元
+        amount = size * price * 1000    # 1 張 = 1000 股
+        if amount >= min_amount:
+            out.append({"price": price, "size": size, "amount": round(amount), "time": t.get("time")})
+    return out
+
+
+async def _scan_one(client: httpx.AsyncClient, symbol: str, min_amount: int, per_symbol: int):
+    try:
+        resp = await client.get(f"{FUGLE_BASE}/intraday/trades/{symbol}", params={"limit": 1000})
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+    bigs = _big_from_trades(data, min_amount)
+    if not bigs:
+        return None
+    bigs.sort(key=lambda x: -x["amount"])
+    return {
+        "symbol": symbol, "count": len(bigs),
+        "max_amount": bigs[0]["amount"], "max_size": bigs[0]["size"], "price": bigs[0]["price"],
+        "trades": bigs[:per_symbol],
+    }
+
+
+async def scan_big_orders(symbols: list[str], min_amount: int = 30_000_000,
+                          per_symbol: int = 3) -> list[dict]:
+    """並行掃描多檔的逐筆大單（async：可取消、快）。回傳有大單的個股，依最大單金額排序。"""
+    key = _api_key()
+    if not key or not symbols:
+        return []
+    async with httpx.AsyncClient(timeout=6, verify=_SSL_CTX, headers={"X-API-KEY": key}) as client:
+        res = await asyncio.gather(*[_scan_one(client, s, min_amount, per_symbol) for s in symbols])
+    out = [r for r in res if r]
+    out.sort(key=lambda x: -x["max_amount"])
+    return out

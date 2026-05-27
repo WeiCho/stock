@@ -4,6 +4,7 @@
 個股日K、三大法人、加權指數皆走 TWSE/TPEx 官方 HTTP / OpenAPI endpoint，免付費 API。
 """
 
+import logging
 import ssl
 import time
 from datetime import date, datetime, timedelta
@@ -11,10 +12,14 @@ from typing import Optional
 import httpx
 import pandas as pd
 from sqlalchemy import select, func, insert
-from db import DailyPrice, Institutional, IndexData, SyncLog, StockName, get_session
+from db import DailyPrice, Institutional, IndexData, SyncLog, StockName, StockIndustry, get_session
+
+# 用 uvicorn 既有的 logger，啟動時即可在 console 看到（CLI 下則退回 root，仍會印 warning）
+log = logging.getLogger("uvicorn.error")
 
 TWSE_BASE = "https://www.twse.com.tw"
 TPEX_BASE = "https://www.tpex.org.tw"
+FINMIND_BASE = "https://api.finmindtrade.com/api/v4/data"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TaiwanStockBot/1.0)"}
 REQUEST_DELAY = 1.2  # 秒，對 TWSE/TPEx 友善
 
@@ -155,6 +160,72 @@ def fetch_stock_history(symbol: str, years: int = 10, market: str = "twse") -> i
         session.commit()
 
     return inserted
+
+
+# ──────────────────────────────────────────────
+# 個股：FinMind 一次抓取整段歷史（最快，作為首選）
+# ──────────────────────────────────────────────
+
+def fetch_finmind_price_history(symbol: str, years: int = 10) -> int:
+    """用 FinMind TaiwanStockPrice 單一請求抓完整段歷史日K（上市櫃皆可）。
+
+    比逐月爬 TWSE/TPEx（約 120 次請求、~150 秒）快上百倍（約 1 秒）。
+    成功回傳新增筆數；無資料或失敗（含被限流）回傳 -1，呼叫端可改用爬蟲。
+    """
+    start = (date.today() - timedelta(days=365 * years + 30)).isoformat()
+    try:
+        with _client(30) as client:
+            resp = client.get(FINMIND_BASE, params={
+                "dataset": "TaiwanStockPrice",
+                "data_id": symbol,
+                "start_date": start,
+            })
+            resp.raise_for_status()
+            payload = resp.json()
+    except Exception as e:
+        log.warning("FinMind 抓 %s 價格失敗，改用爬蟲：%s", symbol, e)
+        return -1
+
+    rows = payload.get("data") or []
+    if not rows:
+        return -1  # 沒資料或被限流 → 交給 TWSE/TPEx 爬蟲
+
+    with get_session() as session:
+        existing_dates = set(session.execute(
+            select(DailyPrice.date).where(DailyPrice.symbol == symbol)
+        ).scalars().all())
+
+        new_rows = []
+        for r in rows:
+            try:
+                d = date.fromisoformat(r["date"])
+                if d in existing_dates:
+                    continue
+                existing_dates.add(d)
+                new_rows.append({
+                    "symbol": symbol,
+                    "date": d,
+                    "open": _num(r["open"]),
+                    "high": _num(r["max"]),   # FinMind 用 max/min 表示最高/最低
+                    "low": _num(r["min"]),
+                    "close": _num(r["close"]),
+                    "volume": _num(r["Trading_Volume"]) / 1000,  # 股→張
+                })
+            except (ValueError, KeyError, TypeError):
+                continue
+
+        if new_rows:
+            session.execute(insert(DailyPrice).prefix_with("OR IGNORE"), new_rows)
+            log = session.execute(
+                select(SyncLog).where(SyncLog.symbol == symbol, SyncLog.data_type == "price")
+            ).scalar_one_or_none()
+            if log:
+                log.last_synced = datetime.utcnow()
+            else:
+                session.add(SyncLog(symbol=symbol, data_type="price", last_synced=datetime.utcnow()))
+        session.commit()
+
+    return len(new_rows)
 
 
 # ──────────────────────────────────────────────
@@ -310,14 +381,174 @@ def _month_offset(base: date, months_back: int) -> date:
     return date(y, m, 1)
 
 
+def fetch_market_breadth(target_date: Optional[date] = None) -> dict:
+    """TWSE MI_INDEX(type=MS) 大盤統計：上市股票漲跌家數 + 全市場成交金額（盤後資料）。
+
+    未指定日期則從今天往前找最近有資料的交易日。回傳
+    {date, turnover(元), up, down, unchanged}；取不到回傳 {}。
+    """
+    candidates = [target_date] if target_date else [date.today() - timedelta(days=i) for i in range(8)]
+    for d in candidates:
+        if d is None or d.weekday() >= 5:
+            continue
+        try:
+            with _client(6) as client:
+                resp = client.get(
+                    f"{TWSE_BASE}/exchangeReport/MI_INDEX",
+                    params={"response": "json", "date": d.strftime("%Y%m%d"), "type": "MS"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception:
+            continue
+        if data.get("stat") != "OK":
+            continue
+
+        turnover = None
+        up = down = unchanged = None
+        for t in data.get("tables") or []:
+            fields = t.get("fields") or []
+            rows = t.get("data") or []
+            # 成交金額：加總各「編號類別」列（避免抓到合計列重複計算）
+            if "成交金額(元)" in fields:
+                idx = fields.index("成交金額(元)")
+                total = 0.0
+                for r in rows:
+                    if str(r[0]).strip()[:1].isdigit():
+                        total += _num(r[idx])
+                turnover = total
+            # 漲跌家數：取「股票」欄（上市個股）
+            if fields[:1] == ["類型"] and "股票" in fields:
+                col = fields.index("股票")
+
+                def _count(label):
+                    row = next((r for r in rows if str(r[0]).startswith(label)), None)
+                    if not row:
+                        return None
+                    try:
+                        return int(str(row[col]).split("(")[0].replace(",", "").strip())
+                    except (ValueError, IndexError):
+                        return None
+
+                up, down, unchanged = _count("上漲"), _count("下跌"), _count("持平")
+
+        if turnover is not None or up is not None:
+            return {
+                "date": d.isoformat(),
+                "turnover": turnover,
+                "up": up,
+                "down": down,
+                "unchanged": unchanged,
+            }
+    return {}
+
+
+async def fetch_live_index() -> dict:
+    """TWSE MIS 即時加權指數（盤中每幾秒更新；非交易時段回最後狀態）。
+
+    回傳 {index, prev_close, change, change_pct, open, high, low, time, date}；
+    取不到時回傳 {}。註：三大法人為盤後資料，無對應的即時版本。
+
+    用 async + 較短 timeout：此端點被前端每 20 秒輪詢，做成可取消的非同步請求，
+    伺服器關閉時不會卡在無法中斷的同步執行緒裡。
+    """
+    url = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+    params = {"ex_ch": "tse_t00.tw", "json": "1", "delay": "0"}
+    headers = {**HEADERS, "Referer": "https://mis.twse.com.tw/stock/index.jsp"}
+    try:
+        async with httpx.AsyncClient(headers=headers, timeout=6, verify=_SSL_CTX,
+                                     follow_redirects=True) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return {}
+
+    arr = data.get("msgArray") or []
+    if not arr:
+        return {}
+    x = arr[0]
+
+    def g(key):
+        v = x.get(key, "")
+        try:
+            return float(str(v).replace(",", ""))
+        except (ValueError, TypeError):
+            return None
+
+    index = g("z")
+    if index is None:  # 盤前 / 尚無成交價時退回開盤或昨收
+        index = g("o") or g("y")
+    prev = g("y")
+    change = round(index - prev, 2) if (index is not None and prev is not None) else None
+    change_pct = round(change / prev * 100, 2) if (change is not None and prev) else None
+
+    return {
+        "index": index,
+        "prev_close": prev,
+        "change": change,
+        "change_pct": change_pct,
+        "open": g("o"),
+        "high": g("h"),
+        "low": g("l"),
+        "time": x.get("t"),
+        "date": x.get("d"),
+    }
+
+
+def fetch_taiex_finmind(years: int = 5) -> int:
+    """用 FinMind 一次抓取加權指數日線（數年），寫入 index_data。回傳新增筆數。
+
+    供大盤走勢的時間區間（1月～5年）使用；比逐月爬 TWSE 快很多（一個請求 vs 數十次）。
+    """
+    start = (date.today() - timedelta(days=365 * years + 30)).isoformat()
+    try:
+        with _client(30) as client:
+            resp = client.get(FINMIND_BASE, params={
+                "dataset": "TaiwanStockPrice", "data_id": "TAIEX", "start_date": start,
+            })
+            resp.raise_for_status()
+            rows = resp.json().get("data", [])
+    except Exception:
+        return 0
+    if not rows:
+        return 0
+
+    with get_session() as session:
+        existing = set(session.execute(
+            select(IndexData.date).where(IndexData.name == "TAIEX")
+        ).scalars().all())
+        new_rows = []
+        for r in rows:
+            try:
+                d = date.fromisoformat(r["date"])
+                if d in existing:
+                    continue
+                existing.add(d)
+                new_rows.append({
+                    "name": "TAIEX", "date": d,
+                    "close": _num(r["close"]), "volume": 0, "change": _num(r.get("spread", 0)),
+                })
+            except (ValueError, KeyError, TypeError):
+                continue
+        if new_rows:
+            session.execute(insert(IndexData).prefix_with("OR IGNORE"), new_rows)
+        session.commit()
+    return len(new_rows)
+
+
 def fetch_taiex_history(months: int = 12) -> int:
     """抓取加權指數歷史，以月為單位逐月抓取。
     MI_5MINS_HIST 每次查詢回傳指定月份的每日 OHLC，欄位順序：日期/開/高/低/收。
     """
-    inserted = 0
     today = date.today()
 
     with get_session() as session:
+        # INSERT OR IGNORE 的結果在 ORM 批次插入下沒有可靠的 rowcount，
+        # 改用前後筆數差計算實際新增數。
+        before = session.execute(
+            select(func.count()).select_from(IndexData).where(IndexData.name == "TAIEX")
+        ).scalar_one()
         for i in range(months):
             target = _month_offset(today, i)
             date_str = target.strftime("%Y%m%d")
@@ -352,15 +583,17 @@ def fetch_taiex_history(months: int = 12) -> int:
                 except (ValueError, IndexError, TypeError, AttributeError):
                     continue
             if batch:
-                result = session.execute(
+                session.execute(
                     insert(IndexData).prefix_with("OR IGNORE"),
                     batch,
                 )
-                inserted += result.rowcount
 
+        after = session.execute(
+            select(func.count()).select_from(IndexData).where(IndexData.name == "TAIEX")
+        ).scalar_one()
         session.commit()
 
-    return inserted
+    return after - before
 
 
 # ──────────────────────────────────────────────
@@ -432,6 +665,8 @@ def daily_update() -> dict:
                 ))
             session.commit()
 
+    log.info("每日更新：法人 %s 個交易日 / %s 筆，加權指數 +%s 筆",
+             inst["days"], inst["records"], index_count)
     return {
         "status": "updated",
         "date": str(today),
@@ -495,8 +730,9 @@ def get_institutional_df(symbol: str, days: int = 60) -> pd.DataFrame:
 def ensure_stock_data(symbol: str) -> bool:
     """
     確保個股資料存在；若尚未下載則觸發歷史資料抓取。
-    依股票清單判斷市場別，先試最可能的市場，抓不到再試另一個，
-    因此上櫃 4 碼股票也能正確下載。回傳 True 表示資料就緒。
+    優先用 FinMind 單一請求抓完整段歷史（最快，約 1 秒）；失敗或被限流時，
+    再依股票清單的市場別逐月爬 TWSE/TPEx（上櫃 4 碼股票也能正確下載）。
+    回傳 True 表示資料就緒。
     """
     with get_session() as session:
         has_data = session.execute(
@@ -506,7 +742,15 @@ def ensure_stock_data(symbol: str) -> bool:
     if has_data:
         return True
 
-    # 依市場別決定嘗試順序；清單查不到則兩個市場都試。
+    log.info("首次查詢 %s，開始下載 10 年歷史…", symbol)
+    # 1) 首選 FinMind（單一請求，免逐月爬 ~120 次）
+    n = fetch_finmind_price_history(symbol, years=10)
+    if n > 0:
+        log.info("%s 歷史下載完成：FinMind %d 筆", symbol, n)
+        return True
+
+    # 2) 退回 TWSE/TPEx 爬蟲；依市場別決定嘗試順序，清單查不到則兩個市場都試。
+    log.info("%s FinMind 無資料，改用 TWSE/TPEx 逐月爬取…", symbol)
     market = get_market(symbol)
     order = {
         "twse": ["twse", "tpex"],
@@ -519,6 +763,10 @@ def ensure_stock_data(symbol: str) -> bool:
         if inserted > 0:
             break
 
+    if inserted > 0:
+        log.info("%s 歷史下載完成：%s %d 筆", symbol, mkt, inserted)
+    else:
+        log.warning("%s 歷史下載失敗：FinMind 與 TWSE/TPEx 皆無資料（代碼可能無效）", symbol)
     return inserted > 0
 
 
@@ -596,6 +844,45 @@ def fetch_stock_list() -> int:
         session.commit()
 
     return len(stocks)
+
+
+def fetch_stock_industry() -> int:
+    """從 FinMind TaiwanStockInfo 抓各股產業別，寫入 stock_industry（供類股資金流向）。回傳對應檔數。"""
+    try:
+        with _client(30) as client:
+            resp = client.get(FINMIND_BASE, params={"dataset": "TaiwanStockInfo"})
+            resp.raise_for_status()
+            rows = resp.json().get("data", [])
+    except Exception:
+        return 0
+
+    mapping: dict[str, str] = {}
+    for r in rows:
+        sym = str(r.get("stock_id", "")).strip()
+        ind = str(r.get("industry_category", "")).strip()
+        if sym and ind and sym not in mapping:
+            mapping[sym] = ind
+    if not mapping:
+        return 0
+
+    with get_session() as session:
+        existing = {s.symbol for s in session.execute(select(StockIndustry)).scalars().all()}
+        session.add_all([
+            StockIndustry(symbol=s, industry=i) for s, i in mapping.items() if s not in existing
+        ])
+        session.commit()
+    return len(mapping)
+
+
+def get_industry_map() -> dict:
+    """回傳 {symbol: industry}；尚未建立則先抓一次（lazy）。"""
+    with get_session() as session:
+        rows = session.execute(select(StockIndustry)).scalars().all()
+    if not rows:
+        fetch_stock_industry()
+        with get_session() as session:
+            rows = session.execute(select(StockIndustry)).scalars().all()
+    return {s.symbol: s.industry for s in rows}
 
 
 def search_stock(query: str, limit: int = 10) -> list[dict]:

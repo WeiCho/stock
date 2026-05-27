@@ -12,6 +12,7 @@ export const api = {
   health: () => get('/health'),
   stock: (sym, company = '') => get(`/stock/${sym}`, { company_name: company }),
   technical: (sym, tf = 'daily') => get(`/stock/${sym}/technical`, { timeframe: tf }),
+  outlook: (sym) => get(`/stock/${sym}/outlook`),
   chip: (sym) => get(`/stock/${sym}/chip`),
   backtest: (sym, signal = 'ma_cross') => get(`/stock/${sym}/backtest`, { signal }),
   pine: (sym, signal = 'ma_cross') => get(`/stock/${sym}/pine`, { signal }),
@@ -19,7 +20,10 @@ export const api = {
   fundamentals: (sym) => get(`/stock/${sym}/fundamentals`),
   price: (sym, days = 120) => get(`/stock/${sym}/price`, { days }),
   marketIndex: (days = 60) => get('/market/index', { days }),
+  indexLive: () => get('/market/index/live'),
   marketInstitutional: (top = 20) => get('/market/institutional', { top }),
+  moneyFlow: (topN = 10) => get('/market/money-flow', { top_n: topN }),
+  bigOrders: (minAmount, topN = 8) => get('/market/big-orders', { min_amount: minAmount, top_n: topN }),
   chipScan: (foreignDays = 3, trustDays = 0, topN = 20) =>
     get('/market/chip-scan', { min_foreign_days: foreignDays, min_trust_days: trustDays, top_n: topN }),
   signals: () => get('/backtest/signals'),

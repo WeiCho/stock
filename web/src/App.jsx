@@ -7,8 +7,9 @@ import BacktestPanel from './components/BacktestPanel'
 import FundamentalsPanel from './components/FundamentalsPanel'
 import NewsPanel from './components/NewsPanel'
 import MarketOverview from './components/MarketOverview'
+import OutlookPanel from './components/OutlookPanel'
 
-const TABS = ['技術面', '籌碼面', '回測', '基本面', '新聞']
+const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '基本面', '新聞']
 
 function useAsync(fn, deps) {
   const [state, setState] = useState({ data: null, loading: false, error: null })
@@ -61,7 +62,7 @@ function buildMas(priceData, technicalData) {
 export default function App() {
   const [symbol, setSymbol] = useState('')
   const [input, setInput] = useState('')
-  const [activeTab, setActiveTab] = useState('技術面')
+  const [activeTab, setActiveTab] = useState('綜合研判')
   const [btSignal, setBtSignal] = useState('ma_cross')
   const [timeframe, setTimeframe] = useState('daily')
   const [view, setView] = useState('market') // 'market' | 'stock'
@@ -69,15 +70,13 @@ export default function App() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const searchRef = useRef(null)
 
-  // 大盤資料
-  const market = useAsync(() => Promise.all([
-    api.marketIndex(60),
-    api.marketInstitutional(20),
-  ]).then(([index, inst]) => ({ index, institutional: inst })), [])
+  // 大盤資料：法人資金動向 + 盤後統計（指數走勢由 MarketOverview 自行依時間區間抓取）
+  const market = useAsync(() => api.moneyFlow(8), [])
 
   // 個股資料（當 symbol 改變時觸發）
   const price = useAsync(() => symbol ? api.price(symbol, 120) : Promise.resolve(null), [symbol])
   const technical = useAsync(() => symbol ? api.technical(symbol, timeframe) : Promise.resolve(null), [symbol, timeframe])
+  const outlook = useAsync(() => symbol ? api.outlook(symbol) : Promise.resolve(null), [symbol])
   const chip = useAsync(() => symbol ? api.chip(symbol) : Promise.resolve(null), [symbol])
   const backtest = useAsync(() => symbol ? api.backtest(symbol, btSignal) : Promise.resolve(null), [symbol, btSignal])
   const fundamentals = useAsync(() => symbol ? api.fundamentals(symbol) : Promise.resolve(null), [symbol])
@@ -108,7 +107,16 @@ export default function App() {
     setShowSuggestions(false)
     setSymbol(s.symbol)
     setView('stock')
-    setActiveTab('技術面')
+    setActiveTab('綜合研判')
+  }
+
+  // 從大盤排行等處點股票代碼 → 直接分析該股
+  const goStock = (sym) => {
+    setInput(sym)
+    setShowSuggestions(false)
+    setSymbol(sym)
+    setView('stock')
+    setActiveTab('綜合研判')
   }
 
   const handleSearch = (e) => {
@@ -120,7 +128,7 @@ export default function App() {
     const resolved = (!v.match(/^\d/) && suggestions.length > 0) ? suggestions[0].symbol : v
     setSymbol(resolved)
     setView('stock')
-    setActiveTab('技術面')
+    setActiveTab('綜合研判')
   }
 
   return (
@@ -160,20 +168,26 @@ export default function App() {
               查詢
             </button>
           </form>
-          {symbol && view === 'stock' && (
-            <span className="text-slate-400 text-sm hidden sm:block">
-              {symbol}
-            </span>
-          )}
+          <nav className="flex items-center gap-3 text-sm shrink-0 ml-auto">
+            <button onClick={() => setView('market')}
+              className={view === 'market' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
+              大盤
+            </button>
+            {symbol && (
+              <button onClick={() => setView('stock')}
+                className={view === 'stock' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
+                {symbol}
+              </button>
+            )}
+          </nav>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {view === 'market' && (
           <Card title="大盤總覽">
-            {market.loading && <Spinner />}
             {market.error && <p className="text-red-400 text-sm">{market.error}</p>}
-            {market.data && <MarketOverview index={market.data.index} institutional={market.data.institutional} />}
+            <MarketOverview moneyFlow={market.data} onSelectStock={goStock} />
           </Card>
         )}
 
@@ -205,6 +219,9 @@ export default function App() {
               </div>
 
               <Card>
+                {activeTab === '綜合研判' && (
+                  outlook.loading ? <Spinner /> : <OutlookPanel data={outlook.data} />
+                )}
                 {activeTab === '技術面' && (
                   technical.loading ? <Spinner /> : <TechnicalPanel data={technical.data} />
                 )}

@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 from datetime import date
-import asyncio
+import threading
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,23 +19,35 @@ from data_fetcher import (
 
 def _startup_tasks():
     daily_update()
-    # 股票清單為空、或缺少上櫃資料（舊版抓取失敗）時，重新抓一次清單
+    # 股票清單為空、或缺少上櫃資料（舊版抓取失敗）時，重新抓一次清單；
+    # 同時預先建立產業對照表，讓首次 /market/money-flow 不必在請求中同步抓 FinMind。
     from sqlalchemy import select, func
-    from db import StockName, get_session
+    from db import StockName, StockIndustry, IndexData, get_session
     with get_session() as session:
         total = session.execute(select(func.count()).select_from(StockName)).scalar_one()
         tpex = session.execute(
             select(func.count()).select_from(StockName).where(StockName.market == "tpex")
         ).scalar_one()
+        industry = session.execute(select(func.count()).select_from(StockIndustry)).scalar_one()
+        taiex = session.execute(
+            select(func.count()).select_from(IndexData).where(IndexData.name == "TAIEX")
+        ).scalar_one()
     if total == 0 or tpex == 0:
         fetch_stock_list()
+    if industry == 0:
+        from data_fetcher import fetch_stock_industry
+        fetch_stock_industry()
+    if taiex < 1000:  # 不足約 4 年 → 用 FinMind 一次補滿 5 年（供大盤走勢時間區間切換）
+        from data_fetcher import fetch_taiex_finmind
+        fetch_taiex_finmind(5)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _startup_tasks)
+    # 背景執行每日更新；用 daemon thread，讓 Ctrl+C 能立即關閉（不等補資料跑完）。
+    # 中途被中斷也安全：bulk 同步標記只在補完才寫入，下次啟動會自動重試。
+    threading.Thread(target=_startup_tasks, daemon=True).start()
     yield
 
 
@@ -117,6 +129,61 @@ def market_index(days: int = 90):
     }
 
 
+@app.get("/market/big-orders")
+async def market_big_orders(min_amount: int = 30000000, top_n: int = 8):
+    """今日大單敲進（Fugle 逐筆）：掃描法人買超個股的大單（單筆 >= min_amount 元）。
+
+    需設定 FUGLE_API_KEY；未設定則回 {available: False}。盤中即時、收盤後為最後一盤。
+    """
+    import fugle
+    import chip as chip_module
+    if not fugle.available():
+        return {"available": False, "orders": []}
+
+    # 觀察清單：今日法人買超的個股（大錢所在，最可能出現大單）
+    mf = chip_module.market_money_flow(top_n=15)
+    names, syms = {}, []
+    if "error" not in mf:
+        for r in mf.get("foreign_buy", []) + mf.get("trust_buy", []):
+            if r["symbol"] not in names:
+                names[r["symbol"]] = r["name"]
+                syms.append(r["symbol"])
+
+    orders = await fugle.scan_big_orders(syms[:12], min_amount=min_amount)
+    for o in orders:
+        o["name"] = names.get(o["symbol"], o["symbol"])
+    return {"available": True, "min_amount": min_amount, "orders": orders[:top_n]}
+
+
+@app.get("/market/index/live")
+async def market_index_live():
+    """即時加權指數（TWSE MIS，盤中每幾秒更新；非交易時段回最後狀態）。"""
+    from data_fetcher import fetch_live_index
+    data = await fetch_live_index()
+    if not data or data.get("index") is None:
+        raise HTTPException(status_code=503, detail="即時指數暫時無法取得")
+    return data
+
+
+@app.get("/market/money-flow")
+def market_money_flow(top_n: int = 10):
+    """全市場法人資金動向 + 盤後大盤統計（漲跌家數、成交金額）。"""
+    import chip as chip_module
+    from data_fetcher import fetch_market_breadth
+    result = chip_module.market_money_flow(top_n)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    # 直接查「法人最新交易日」當天的大盤統計，省去回溯找日期的多次請求
+    try:
+        target = date.fromisoformat(result["date"])
+    except (ValueError, KeyError):
+        target = None
+    result["market_stats"] = fetch_market_breadth(target)  # 盤後漲跌家數+成交金額；取不到為 {}
+    sf = chip_module.sector_money_flow()                    # 類股資金流向；取不到為 {}
+    result["sector_flow"] = sf if "error" not in sf else {}
+    return result
+
+
 # ──────────────────────────────────────────────
 # 個股
 # ──────────────────────────────────────────────
@@ -141,6 +208,16 @@ def stock_technical(symbol: str, timeframe: str = "daily"):
     """個股技術面分析。timeframe: daily | weekly"""
     import technical
     result = technical.analyze(symbol, timeframe)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.get("/stock/{symbol}/outlook")
+def stock_outlook(symbol: str):
+    """綜合研判：技術面 + 籌碼面 + 歷史回測 → 方向偏向、加權依據、預期區間。"""
+    import outlook
+    result = outlook.analyze(symbol)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result

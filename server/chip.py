@@ -6,7 +6,7 @@
 from datetime import date, timedelta
 import pandas as pd
 from sqlalchemy import select, func
-from db import Institutional, get_session
+from db import Institutional, StockName, get_session
 from data_fetcher import get_institutional_df
 
 
@@ -210,3 +210,117 @@ def scan_bulk(
 
     results.sort(key=sort_key, reverse=True)
     return results[:top_n]
+
+
+# ──────────────────────────────────────────────
+# 全市場資金動向（大盤總覽用）
+# ──────────────────────────────────────────────
+
+def market_money_flow(top_n: int = 10) -> dict:
+    """全市場法人資金動向：當日三大法人合計淨額（張）＋ 外資/投信買超賣超排行（含股名）。
+
+    註：資料來自 TWSE T86，僅含上市；用來回答「整體資金流入或流出、外資與投信在買哪些」。
+    """
+    latest = _latest_institutional_date()
+    if latest is None:
+        return {"error": "法人資料尚未下載"}
+
+    with get_session() as session:
+        sums = session.execute(
+            select(
+                func.sum(Institutional.foreign_buy),
+                func.sum(Institutional.trust_buy),
+                func.sum(Institutional.dealer_buy),
+            ).where(Institutional.date == latest)
+        ).one()
+
+        if sums[0] is None:
+            return {"error": "法人資料尚未更新，請稍後再試"}
+
+        def _top(col, desc: bool):
+            order = col.desc() if desc else col.asc()
+            return session.execute(
+                select(Institutional)
+                .where(Institutional.date == latest)
+                .order_by(order)
+                .limit(top_n)
+            ).scalars().all()
+
+        foreign_buy = _top(Institutional.foreign_buy, True)
+        foreign_sell = _top(Institutional.foreign_buy, False)
+        trust_buy = _top(Institutional.trust_buy, True)
+        trust_sell = _top(Institutional.trust_buy, False)
+
+        syms = {r.symbol for r in foreign_buy + foreign_sell + trust_buy + trust_sell}
+        names = {
+            s.symbol: s.name
+            for s in session.execute(
+                select(StockName).where(StockName.symbol.in_(syms))
+            ).scalars().all()
+        }
+
+    def _fmt(r):
+        return {
+            "symbol": r.symbol,
+            "name": names.get(r.symbol, r.symbol),
+            "foreign": round(r.foreign_buy),
+            "trust": round(r.trust_buy),
+            "dealer": round(r.dealer_buy),
+            "total": round(r.total_buy),
+        }
+
+    foreign_total, trust_total, dealer_total = round(sums[0]), round(sums[1]), round(sums[2])
+    return {
+        "date": str(latest),
+        "summary": {
+            "foreign": foreign_total,
+            "trust": trust_total,
+            "dealer": dealer_total,
+            "total": foreign_total + trust_total + dealer_total,
+        },
+        "foreign_buy": [_fmt(r) for r in foreign_buy],
+        "foreign_sell": [_fmt(r) for r in foreign_sell],
+        "trust_buy": [_fmt(r) for r in trust_buy],
+        "trust_sell": [_fmt(r) for r in trust_sell],
+    }
+
+
+def sector_money_flow(top_n: int = 8) -> dict:
+    """類股資金流向：以最近交易日，依產業別彙總三大法人淨買賣超（張），看資金流入/流出哪些類股。"""
+    from collections import defaultdict
+    from data_fetcher import get_industry_map
+
+    latest = _latest_institutional_date()
+    if latest is None:
+        return {"error": "法人資料尚未下載"}
+
+    industry = get_industry_map()
+    with get_session() as session:
+        rows = session.execute(
+            select(Institutional).where(Institutional.date == latest)
+        ).scalars().all()
+    if not rows:
+        return {"error": "法人資料尚未更新"}
+
+    agg = defaultdict(lambda: {"total": 0.0, "foreign": 0.0, "trust": 0.0, "count": 0})
+    for r in rows:
+        ind = industry.get(r.symbol)
+        if not ind:
+            continue
+        a = agg[ind]
+        a["total"] += r.total_buy
+        a["foreign"] += r.foreign_buy
+        a["trust"] += r.trust_buy
+        a["count"] += 1
+
+    sectors = [
+        {"industry": k, "total": round(v["total"]), "foreign": round(v["foreign"]),
+         "trust": round(v["trust"]), "count": v["count"]}
+        for k, v in agg.items()
+    ]
+    sectors.sort(key=lambda x: x["total"], reverse=True)
+    return {
+        "date": str(latest),
+        "inflow": [s for s in sectors if s["total"] > 0][:top_n],
+        "outflow": [s for s in reversed(sectors) if s["total"] < 0][:top_n],
+    }
