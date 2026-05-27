@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 import httpx
 import pandas as pd
-from sqlalchemy import select, func
+from sqlalchemy import select, func, insert
 from db import DailyPrice, Institutional, IndexData, SyncLog, StockName, get_session
 
 TWSE_BASE = "https://www.twse.com.tw"
@@ -120,17 +120,22 @@ def fetch_stock_history(symbol: str, years: int = 10, market: str = "twse") -> i
                 if row["date"] in existing_dates:
                     continue
                 existing_dates.add(row["date"])
-                new_rows.append(DailyPrice(
-                    symbol=symbol,
-                    date=row["date"],
-                    open=row["open"],
-                    high=row["high"],
-                    low=row["low"],
-                    close=row["close"],
-                    volume=row["volume"],
-                ))
+                new_rows.append({
+                    "symbol": symbol,
+                    "date": row["date"],
+                    "open": row["open"],
+                    "high": row["high"],
+                    "low": row["low"],
+                    "close": row["close"],
+                    "volume": row["volume"],
+                })
 
-        session.add_all(new_rows)
+        # 使用 INSERT OR IGNORE 避免並發請求或重複抓取造成 UNIQUE constraint 錯誤
+        if new_rows:
+            session.execute(
+                insert(DailyPrice).prefix_with("OR IGNORE"),
+                new_rows,
+            )
         inserted = len(new_rows)
 
         # 僅在實際抓到資料時記錄同步時間，否則保持未同步以便之後重試
@@ -248,18 +253,22 @@ def fetch_daily_institutional_bulk(target_date: Optional[date] = None) -> int:
                 foreign = (_num(row[4]) + _num(row[7])) / 1000
                 trust = _num(row[10]) / 1000
                 dealer = _num(row[11]) / 1000
-                new_rows.append(Institutional(
-                    symbol=symbol,
-                    date=target_date,
-                    foreign_buy=foreign,
-                    trust_buy=trust,
-                    dealer_buy=dealer,
-                    total_buy=foreign + trust + dealer,
-                ))
+                new_rows.append({
+                    "symbol": symbol,
+                    "date": target_date,
+                    "foreign_buy": foreign,
+                    "trust_buy": trust,
+                    "dealer_buy": dealer,
+                    "total_buy": foreign + trust + dealer,
+                })
             except (ValueError, IndexError, TypeError, AttributeError):
                 continue
 
-        session.add_all(new_rows)
+        if new_rows:
+            session.execute(
+                insert(Institutional).prefix_with("OR IGNORE"),
+                new_rows,
+            )
         session.commit()
 
     return len(new_rows)
@@ -327,28 +336,27 @@ def fetch_taiex_history(months: int = 12) -> int:
 
             _sleep()
 
+            batch = []
             for row in data.get("data", []):
                 try:
                     parts = row[0].split("/")
                     real_date = date(int(parts[0]) + 1911, int(parts[1]), int(parts[2]))
                     close = _num(row[4])  # row[4] = 收盤價
-                    existing = session.execute(
-                        select(IndexData).where(
-                            IndexData.name == "TAIEX",
-                            IndexData.date == real_date
-                        )
-                    ).scalar_one_or_none()
-                    if existing is None:
-                        session.add(IndexData(
-                            name="TAIEX",
-                            date=real_date,
-                            close=close,
-                            volume=0,
-                            change=0,
-                        ))
-                        inserted += 1
+                    batch.append({
+                        "name": "TAIEX",
+                        "date": real_date,
+                        "close": close,
+                        "volume": 0,
+                        "change": 0,
+                    })
                 except (ValueError, IndexError, TypeError, AttributeError):
                     continue
+            if batch:
+                result = session.execute(
+                    insert(IndexData).prefix_with("OR IGNORE"),
+                    batch,
+                )
+                inserted += result.rowcount
 
         session.commit()
 
@@ -569,20 +577,22 @@ def fetch_stock_list() -> int:
         return 0
 
     with get_session() as session:
-        existing = {r.symbol for r in session.execute(select(StockName)).scalars().all()}
+        existing = {r.symbol: r for r in session.execute(select(StockName)).scalars().all()}
         new_records = [
-            StockName(symbol=s["symbol"], name=s["name"], market=s["market"])
+            {"symbol": s["symbol"], "name": s["name"], "market": s["market"]}
             for s in stocks if s["symbol"] not in existing
         ]
         # 更新已存在的名稱
         for s in stocks:
-            if s["symbol"] in existing:
-                rec = session.execute(
-                    select(StockName).where(StockName.symbol == s["symbol"])
-                ).scalar_one_or_none()
-                if rec and rec.name != s["name"]:
-                    rec.name = s["name"]
-        session.add_all(new_records)
+            rec = existing.get(s["symbol"])
+            if rec and rec.name != s["name"]:
+                rec.name = s["name"]
+        # INSERT OR IGNORE 避免並發衝突
+        if new_records:
+            session.execute(
+                insert(StockName).prefix_with("OR IGNORE"),
+                new_records,
+            )
         session.commit()
 
     return len(stocks)
