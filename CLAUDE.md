@@ -25,13 +25,13 @@ taiwan-stock/
 │   ├── backtest.py        # 訊號勝率回測引擎
 │   ├── news_fundamental.py# 新聞 RSS + FinMind 基本面
 │   └── pine_exporter.py   # Pine Script 模板生成
-└── web/                   # React Web App（Vite + Tailwind + lightweight-charts v5）
+└── web/                   # React Web App（Vite + TypeScript + Tailwind + lightweight-charts v5）
     ├── src/
-    │   ├── App.jsx        # 主頁面：大盤總覽 + 個股查詢
-    │   ├── api.js         # fetch wrapper，proxy /api → localhost:8000
-    │   └── components/    # PriceChart / TechnicalPanel / ChipPanel /
-    │                      # BacktestPanel / FundamentalsPanel /
-    │                      # NewsPanel / MarketOverview
+    │   ├── App.tsx        # 主頁面：大盤總覽 + 個股查詢
+    │   ├── api.ts         # fetch wrapper，proxy /api → localhost:8000
+    │   └── components/    # PriceChart / TechnicalPanel / ChipPanel / BacktestPanel /
+    │                      # FundamentalsPanel / NewsPanel / MarketOverview / OutlookPanel（.tsx）
+    ├── tsconfig.json      # TypeScript 設定（寬鬆起步，build 會跑 tsc --noEmit）
     └── vite.config.js     # proxy + tailwindcss plugin
 ```
 

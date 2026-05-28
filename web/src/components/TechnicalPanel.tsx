@@ -3,7 +3,7 @@ function Badge({ type, name }) {
   return <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>{name}</span>
 }
 
-function Row({ label, value, sub }) {
+function Row({ label, value, sub }: any) {
   return (
     <div className="flex justify-between py-1 border-b border-slate-800 text-sm">
       <span className="text-slate-400">{label}</span>

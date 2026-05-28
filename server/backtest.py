@@ -4,6 +4,7 @@
 """
 
 from datetime import date
+import numpy as np
 import pandas as pd
 from data_fetcher import get_price_df, ensure_stock_data
 from technical import calc_indicators, to_weekly
@@ -24,7 +25,72 @@ SUPPORTED_SIGNALS = {
     "macd_turn_neg":   "MACD 柱狀圖由正轉負",
     "rsi_oversold":    "RSI 超賣（<30）",
     "rsi_overbought":  "RSI 超買（>70）",
+    # twstock BestFourPoint 四大買賣點（負/正乖離率 pivot + 任一量價/均線條件）
+    "best_four_buy":   "四大買點（量價/均線 + 負乖離反彈，twstock）",
+    "best_four_sell":  "四大賣點（量價/均線 + 正乖離反轉，twstock）",
 }
+
+
+# ──────────────────────────────────────────────
+# twstock BestFourPoint 形態（vectorised）
+# ──────────────────────────────────────────────
+
+def _best_four_pivot(bias: pd.Series, position: bool) -> pd.Series:
+    """對 ma_bias_ratio(3,6) 序列，每一根 K 看最近 5 根（含當下）：
+    - position=False（負乖離）：5 根全為負，且最小值出現在 sample 第 2 或第 3 位（即 2–3 天前）→ 觸發
+    - position=True（正乖離）：對稱，最大值在 2–3 天前
+    對應 twstock.analytics.ma_bias_ratio_pivot 的 sample_size=5 條件。"""
+    arr = bias.values
+    n = len(arr)
+    out = np.zeros(n, dtype=bool)
+    for t in range(4, n):
+        s = arr[t-4:t+1]
+        if np.any(pd.isna(s)):
+            continue
+        if position:
+            idx = int(np.argmax(s))
+            ok = s.max() > 0
+        else:
+            idx = int(np.argmin(s))
+            ok = s.max() < 0
+        # twstock: sample_size - idx < 4 且 idx != sample_size - 1
+        if ok and (5 - idx < 4) and (idx != 4):
+            out[t] = True
+    return pd.Series(out, index=bias.index)
+
+
+def _best_four_buy_mask(df: pd.DataFrame) -> pd.Series:
+    """四大買點：負乖離 pivot AND (任一條件)。"""
+    if not {"close", "open", "volume"}.issubset(df.columns) or len(df) < 10:
+        return pd.Series(False, index=df.index)
+    close, opn, vol = df["close"], df["open"], df["volume"]
+    ma3 = close.rolling(3).mean()
+    ma6 = close.rolling(6).mean()
+    # 條件 1：量增收紅
+    c1 = (vol > vol.shift(1)) & (close > opn)
+    # 條件 2：量縮且收盤 > 昨開（量縮價不跌）
+    c2 = (vol < vol.shift(1)) & (close > opn.shift(1))
+    # 條件 3：3日均價剛由跌轉漲（continuous(MA3) == 1）
+    c3 = (ma3 > ma3.shift(1)) & (ma3.shift(1) <= ma3.shift(2))
+    # 條件 4：3 日均價 > 6 日均價
+    c4 = ma3 > ma6
+    pivot = _best_four_pivot(ma3 - ma6, position=False)
+    return pivot & (c1 | c2 | c3 | c4)
+
+
+def _best_four_sell_mask(df: pd.DataFrame) -> pd.Series:
+    """四大賣點：正乖離 pivot AND (任一條件)。"""
+    if not {"close", "open", "volume"}.issubset(df.columns) or len(df) < 10:
+        return pd.Series(False, index=df.index)
+    close, opn, vol = df["close"], df["open"], df["volume"]
+    ma3 = close.rolling(3).mean()
+    ma6 = close.rolling(6).mean()
+    c1 = (vol > vol.shift(1)) & (close < opn)
+    c2 = (vol < vol.shift(1)) & (close < opn.shift(1))
+    c3 = (ma3 < ma3.shift(1)) & (ma3.shift(1) >= ma3.shift(2))
+    c4 = ma3 < ma6
+    pivot = _best_four_pivot(ma3 - ma6, position=True)
+    return pivot & (c1 | c2 | c3 | c4)
 
 
 WEEKLY_SIGNALS = {"weekly_ma_cross"}
@@ -83,6 +149,12 @@ def _detect_trigger(df: pd.DataFrame, signal: str) -> pd.Series:
         if "rsi" not in df:
             return false
         return (df["rsi"].shift(1) <= 70) & (df["rsi"] > 70)
+
+    if signal == "best_four_buy":
+        return _best_four_buy_mask(df)
+
+    if signal == "best_four_sell":
+        return _best_four_sell_mask(df)
 
     return false
 

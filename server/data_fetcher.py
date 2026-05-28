@@ -146,14 +146,16 @@ def fetch_stock_history(symbol: str, years: int = 10, market: str = "twse") -> i
         # 僅在實際抓到資料時記錄同步時間，否則保持未同步以便之後重試
         # （例如把上櫃股票誤判為上市而抓到空資料的情況）。
         if inserted > 0:
-            log = session.execute(
+            # 變數名避開 `log` — 函式內任何位置出現 `log =` 都會讓整個函式的 `log` 變 local，
+            # 讓 except 分支的 `log.warning(...)` 變成 UnboundLocalError
+            sync_row = session.execute(
                 select(SyncLog).where(
                     SyncLog.symbol == symbol,
                     SyncLog.data_type == "price"
                 )
             ).scalar_one_or_none()
-            if log:
-                log.last_synced = datetime.utcnow()
+            if sync_row:
+                sync_row.last_synced = datetime.utcnow()
             else:
                 session.add(SyncLog(symbol=symbol, data_type="price", last_synced=datetime.utcnow()))
 
@@ -216,11 +218,11 @@ def fetch_finmind_price_history(symbol: str, years: int = 10) -> int:
 
         if new_rows:
             session.execute(insert(DailyPrice).prefix_with("OR IGNORE"), new_rows)
-            log = session.execute(
+            sync_row = session.execute(
                 select(SyncLog).where(SyncLog.symbol == symbol, SyncLog.data_type == "price")
             ).scalar_one_or_none()
-            if log:
-                log.last_synced = datetime.utcnow()
+            if sync_row:
+                sync_row.last_synced = datetime.utcnow()
             else:
                 session.add(SyncLog(symbol=symbol, data_type="price", last_synced=datetime.utcnow()))
         session.commit()
@@ -649,14 +651,16 @@ def daily_update() -> dict:
     # 取得任何法人資料後才標記今日已同步，避免「今天尚未公布」時提前鎖定而當日不再重試
     if inst["days"] > 0:
         with get_session() as session:
-            log = session.execute(
+            # NB: 變數名避開 `log` — 否則會在 function-scope 遮蔽模組頂層 logger，
+            # 當 inst["days"]==0 時整個 if 跳過，下方 log.info 會炸 UnboundLocalError
+            sync_row = session.execute(
                 select(SyncLog).where(
                     SyncLog.symbol == "__bulk__",
                     SyncLog.data_type == "institutional_bulk"
                 )
             ).scalar_one_or_none()
-            if log:
-                log.last_synced = datetime.utcnow()
+            if sync_row:
+                sync_row.last_synced = datetime.utcnow()
             else:
                 session.add(SyncLog(
                     symbol="__bulk__",
@@ -679,6 +683,38 @@ def daily_update() -> dict:
 # ──────────────────────────────────────────────
 # 取得 SQLite 中已有的個股資料（供模組讀取）
 # ──────────────────────────────────────────────
+
+def resample_ohlc(df: pd.DataFrame, tf: str) -> pd.DataFrame:
+    """以日K 為基礎重採樣為其他時間框架。tf: 1d / 3d / 5d / 1w / 3w / 1mo（其他回原樣）。
+
+    3d / 5d 以「交易日」分桶（非曆日），3w 以週K 再分桶 3 根，1mo 以曆月。
+    """
+    if df.empty or tf in (None, "1d", "daily"):
+        return df
+    d = df.copy()
+    d.index = pd.to_datetime(d.index)
+    ohlc = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+
+    if tf == "1mo":
+        return d.resample("ME").agg(ohlc).dropna()
+    if tf in ("1w", "weekly"):
+        return d.resample("W-FRI").agg(ohlc).dropna()
+    if tf == "3w":
+        w = d.resample("W-FRI").agg(ohlc).dropna()
+        if w.empty:
+            return w
+        buckets = [i // 3 for i in range(len(w))]
+        out = w.groupby(buckets).agg(ohlc)
+        out.index = pd.Index([w.index[min((i + 1) * 3 - 1, len(w) - 1)] for i in range(len(out))])
+        return out
+    if tf in ("3d", "5d"):
+        n = int(tf[:-1])
+        buckets = [i // n for i in range(len(d))]
+        out = d.groupby(buckets).agg(ohlc)
+        out.index = pd.Index([d.index[min((i + 1) * n - 1, len(d) - 1)] for i in range(len(out))])
+        return out
+    return d
+
 
 def get_price_df(symbol: str) -> pd.DataFrame:
     """從 SQLite 讀取個股所有日K，回傳排序後的 DataFrame。"""

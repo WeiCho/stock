@@ -23,7 +23,7 @@ export default function BacktestPanel({ data, signal, onSignalChange }) {
     </div>
   )
 
-  const { signal_name, total_triggers, low_sample_warning, stats, trigger_dates, disclaimer } = data
+  const { total_triggers, low_sample_warning, stats, trigger_dates, disclaimer } = data
 
   return (
     <div className="space-y-3">

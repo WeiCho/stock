@@ -1,4 +1,4 @@
-function ChipRow({ label, today, consec, cum5d, trend }) {
+function ChipRow({ label, today, cum5d, trend }: any) {
   const sign = today >= 0 ? 'text-red-400' : 'text-green-400'
   return (
     <div className="border border-slate-700 rounded-lg p-3 space-y-1">
@@ -26,10 +26,8 @@ export default function ChipPanel({ data }) {
         <p className="text-slate-300 text-sm">{summary}</p>
         <span className="text-xs text-slate-500">{date}</span>
       </div>
-      <ChipRow label="外資" today={foreign?.today} consec={foreign?.consecutive_days}
-        cum5d={foreign?.cum_5d} trend={foreign?.trend} />
-      <ChipRow label="投信" today={trust?.today} consec={trust?.consecutive_days}
-        cum5d={trust?.cum_5d} trend={trust?.trend} />
+      <ChipRow label="外資" today={foreign?.today} cum5d={foreign?.cum_5d} trend={foreign?.trend} />
+      <ChipRow label="投信" today={trust?.today} cum5d={trust?.cum_5d} trend={trust?.trend} />
       <ChipRow label="自營商" today={dealer?.today} trend={dealer?.trend} />
       <div className="flex justify-between text-sm border-t border-slate-700 pt-2">
         <span className="text-slate-400">三大合計</span>

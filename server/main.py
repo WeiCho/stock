@@ -189,18 +189,44 @@ def market_money_flow(top_n: int = 10):
 # ──────────────────────────────────────────────
 
 @app.get("/stock/{symbol}/price")
-def stock_price(symbol: str, days: int = 60):
-    """個股日K（若尚未下載則觸發歷史資料抓取）。"""
+def stock_price(symbol: str, days: int = 60, tf: str = "1d"):
+    """個股 K 線。tf: 1d / 3d / 5d / 1w / 3w / 1mo（由日K 重採樣；當日請改用 /intraday）。"""
+    import pandas as pd
+    from data_fetcher import resample_ohlc
     ensure_stock_data(symbol)
     df = get_price_df(symbol)
     if df.empty:
         raise HTTPException(status_code=404, detail=f"找不到 {symbol} 的資料")
 
-    df_tail = df.tail(days).reset_index()
-    return {
-        "symbol": symbol,
-        "data": df_tail.to_dict(orient="records"),
-    }
+    df_res = resample_ohlc(df.tail(days), tf).reset_index()
+    if "date" not in df_res.columns and "index" in df_res.columns:
+        df_res = df_res.rename(columns={"index": "date"})
+    df_res["date"] = pd.to_datetime(df_res["date"]).dt.strftime("%Y-%m-%d")
+    return {"symbol": symbol, "tf": tf, "data": df_res.to_dict(orient="records")}
+
+
+@app.get("/stock/{symbol}/intraday")
+async def stock_intraday(symbol: str, timeframe: str = "5"):
+    """個股盤中分鐘K（Fugle）。timeframe: 1/5/10/15/30/60 分鐘。需 FUGLE_API_KEY。"""
+    import fugle
+    if not fugle.available():
+        raise HTTPException(status_code=503, detail="需設定 FUGLE_API_KEY")
+    data = await fugle.intraday_candles(symbol, timeframe)
+    if not data:
+        raise HTTPException(status_code=503, detail="盤中資料暫時無法取得")
+    return data
+
+
+@app.get("/market/index/intraday")
+async def market_index_intraday(timeframe: str = "5"):
+    """加權指數盤中分鐘K（Fugle IX0001）。timeframe: 1/5/10/15/30/60 分鐘。"""
+    import fugle
+    if not fugle.available():
+        raise HTTPException(status_code=503, detail="需設定 FUGLE_API_KEY")
+    data = await fugle.intraday_candles("IX0001", timeframe)
+    if not data:
+        raise HTTPException(status_code=503, detail="盤中資料暫時無法取得")
+    return data
 
 
 @app.get("/stock/{symbol}/technical")

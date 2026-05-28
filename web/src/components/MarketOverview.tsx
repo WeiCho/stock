@@ -1,26 +1,98 @@
 import { useEffect, useRef, useState } from 'react'
-import { createChart, AreaSeries } from 'lightweight-charts'
+import { createChart, AreaSeries, BaselineSeries, LineSeries, UTCTimestamp, Time } from 'lightweight-charts'
 import { api } from '../api'
 
-function IndexChart({ data }) {
-  const ref = useRef(null)
+// 日線（'YYYY-MM-DD' 字串）/ 盤中分鐘（ISO datetime → epoch 秒）共用
+const toTime = (s: string): Time => (typeof s === 'string' && s.includes('T')
+  ? (Math.floor(new Date(s).getTime() / 1000) as UTCTimestamp)
+  : s as Time)
+
+function IndexChart({ data, intraday, previousClose }: { data?: any[]; intraday?: boolean; previousClose?: number | null }) {
+  const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!ref.current || !data?.length) return
-    const chart = createChart(ref.current, {
+    const el = ref.current
+    if (!el || !data?.length) return
+    const chart = createChart(el, {
       layout: { background: { color: '#1a1d2e' }, textColor: '#94a3b8' },
       grid: { vertLines: { color: '#1e2235' }, horzLines: { color: '#1e2235' } },
       rightPriceScale: { borderColor: '#2e3347' },
-      timeScale: { borderColor: '#2e3347' },
-      width: ref.current.clientWidth,
-      height: 180,
+      timeScale: {
+        borderColor: '#2e3347',
+        timeVisible: !!intraday,
+        secondsVisible: false,
+        // 盤中只標小時（09 10 11 12 13）；其他模式維持預設日期格式
+        tickMarkFormatter: intraday
+          ? (t: number) => {
+              const d = new Date((t as number) * 1000)
+              const hh = d.toLocaleString('en-US', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false })
+              const mm = d.toLocaleString('en-US', { timeZone: 'Asia/Taipei', minute: '2-digit' })
+              return mm === '00' ? hh : `${hh}:${mm.padStart(2, '0')}`
+            }
+          : undefined,
+      },
+      width: el.clientWidth,
+      height: 200,
     })
-    const line = chart.addSeries(AreaSeries, { lineColor: '#38bdf8', topColor: 'rgba(56,189,248,0.2)', bottomColor: 'transparent', lineWidth: 2 })
-    line.setData(data.map(r => ({ time: r.date, value: r.close })))
+
+    // 盤中且有昨收 → 用 BaselineSeries（昨收之上紅+紅填、之下綠+綠填，台股慣例）
+    // 否則退回單色 Area（歷史日線多空都正常）
+    const line = (intraday && previousClose != null)
+      ? chart.addSeries(BaselineSeries, {
+          baseValue: { type: 'price', price: previousClose },
+          topLineColor: '#ef4444',
+          topFillColor1: 'rgba(239,68,68,0.28)',
+          topFillColor2: 'rgba(239,68,68,0.04)',
+          bottomLineColor: '#22c55e',
+          bottomFillColor1: 'rgba(34,197,94,0.04)',
+          bottomFillColor2: 'rgba(34,197,94,0.28)',
+          lineWidth: 2,
+          priceLineVisible: false,
+        })
+      : chart.addSeries(AreaSeries, {
+          lineColor: '#38bdf8',
+          topColor: 'rgba(56,189,248,0.2)',
+          bottomColor: 'transparent',
+          lineWidth: 2,
+          priceLineVisible: false,
+        })
+    line.setData(data.map(r => ({ time: toTime(r.date), value: r.close })))
+
+    // 盤中均價線（Fugle 已提供 r.average）
+    if (intraday && data.some(r => r.average != null)) {
+      const avg = chart.addSeries(LineSeries, {
+        color: '#fbbf24', lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+      })
+      avg.setData(data.filter(r => r.average != null).map(r => ({ time: toTime(r.date), value: r.average })))
+    }
+
+    // 前收參考線（盤中）
+    if (intraday && previousClose != null) {
+      line.createPriceLine({
+        price: previousClose,
+        color: '#64748b',
+        lineWidth: 1,
+        lineStyle: 2, // Dashed
+        axisLabelVisible: true,
+        title: '昨收',
+      })
+    }
+
+    // 盤中：在實際資料後補上空 bar slot 直到收盤（09:00–13:30 共 270 分鐘）。
+    // v5 的 setVisibleRange 會 clamp 到有資料的時間點，無法直接延伸；改用 rightOffset
+    // 補空 slot，X 軸的 tickMarkFormatter 會自動 render 11:00 / 12:00 / 13:00 等時間標記。
+    if (intraday && data.length >= 2) {
+      const dt = (new Date(data[1].date).getTime() - new Date(data[0].date).getTime()) / 60000
+      if (dt > 0) {
+        const expected = Math.round(270 / dt)  // 09:00–13:30
+        chart.timeScale().applyOptions({ rightOffset: Math.max(0, expected - data.length) })
+      }
+    }
     chart.timeScale().fitContent()
-    const obs = new ResizeObserver(() => chart.applyOptions({ width: ref.current.clientWidth }))
-    obs.observe(ref.current)
+
+    const obs = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }))
+    obs.observe(el)
     return () => { obs.disconnect(); chart.remove() }
-  }, [data])
+  }, [data, intraday, previousClose])
   return <div ref={ref} className="w-full rounded-lg overflow-hidden" />
 }
 
@@ -31,6 +103,15 @@ const fmtPct = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%
 const fmtIdx = (v) => (v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const fmtDate = (d) => (d && d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : d)
 const fmtTurnover = (n) => (n == null ? '—' : n >= 1e12 ? `${(n / 1e12).toFixed(2)} 兆` : `${Math.round(n / 1e8).toLocaleString()} 億`)
+
+// 台股盤中（週一到五 09:00–13:30 台北時間）；用於 gate 即時/大單輪詢，避免休市時無謂打 API
+function isTradingHours(): boolean {
+  const tw = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
+  const day = tw.getDay() // 0=Sun, 6=Sat
+  if (day === 0 || day === 6) return false
+  const hm = tw.getHours() * 100 + tw.getMinutes()
+  return hm >= 900 && hm <= 1330
+}
 
 function FlowTile({ label, value }) {
   return (
@@ -83,16 +164,18 @@ function SectorList({ title, rows }) {
   )
 }
 
-const RANGES = [['3日', 3], ['1月', 30], ['3月', 90], ['6月', 180], ['1年', 365], ['5年', 1825]]
+// 0 = 當日（Fugle 盤中 5 分鐘）；其餘為日線歷史的回溯天數
+const RANGES: [string, number][] = [['當日', 0], ['3日', 3], ['1月', 30], ['3月', 90], ['6月', 180], ['1年', 365], ['5年', 1825]]
 
 export default function MarketOverview({ moneyFlow, onSelectStock }) {
-  // 指數走勢：依選擇的時間區間抓取（指數歷史已用 FinMind 補滿約 5 年）
+  // 指數走勢：依選擇的時間區間抓取；當日 = Fugle IX0001 盤中分鐘 K
   const [days, setDays] = useState(180)
-  const [index, setIndex] = useState(null)
+  const [index, setIndex] = useState<any>(null)
   useEffect(() => {
     let active = true
     setIndex(null)
-    api.marketIndex(days).then(d => { if (active) setIndex(d) }).catch(() => {})
+    const p = days === 0 ? api.indexIntraday('5') : api.marketIndex(days)
+    p.then(d => { if (active) setIndex(d) }).catch(() => {})
     return () => { active = false }
   }, [days])
 
@@ -103,23 +186,23 @@ export default function MarketOverview({ moneyFlow, onSelectStock }) {
   const chg5 = chgN(5)
   const chg20 = chgN(20)
 
-  // 即時加權指數：每 20 秒輪詢（盤中跳動，非交易時段為最後狀態）
-  const [live, setLive] = useState(null)
+  // 即時加權指數：盤中每秒輪詢；非交易時段（週末、09:00-13:30 以外）保留最後狀態、不再打 API
+  const [live, setLive] = useState<any>(null)
   useEffect(() => {
     let active = true
     const tick = () => api.indexLive().then(d => { if (active) setLive(d) }).catch(() => {})
-    tick()
-    const id = setInterval(tick, 20000)
+    tick()  // 初次必抓一次，讓非交易時段也能顯示上一盤
+    const id = setInterval(() => { if (isTradingHours()) tick() }, 1000)
     return () => { active = false; clearInterval(id) }
   }, [])
 
-  // 今日大單敲進（Fugle 逐筆，盤中每 60 秒更新）
-  const [bigOrders, setBigOrders] = useState(null)
+  // 今日大單敲進（Fugle 逐筆）：盤中每 60 秒更新（受 Fugle 流量限制，不每秒打）
+  const [bigOrders, setBigOrders] = useState<any>(null)
   useEffect(() => {
     let active = true
     const tick = () => api.bigOrders().then(d => { if (active) setBigOrders(d) }).catch(() => {})
     tick()
-    const id = setInterval(tick, 60000)
+    const id = setInterval(() => { if (isTradingHours()) tick() }, 60000)
     return () => { active = false; clearInterval(id) }
   }, [])
 
@@ -165,11 +248,13 @@ export default function MarketOverview({ moneyFlow, onSelectStock }) {
           ) : (
             <span className="text-xs text-slate-500">加權指數 {latest?.date}</span>
           )}
-          <span className="text-xs text-slate-500 ml-auto">
-            近5日 <b className={sign(chg5 ?? 0)}>{fmtPct(chg5)}</b>
-            <span className="mx-1">·</span>
-            近20日 <b className={sign(chg20 ?? 0)}>{fmtPct(chg20)}</b>
-          </span>
+          {days !== 0 && (
+            <span className="text-xs text-slate-500 ml-auto">
+              近5日 <b className={sign(chg5 ?? 0)}>{fmtPct(chg5)}</b>
+              <span className="mx-1">·</span>
+              近20日 <b className={sign(chg20 ?? 0)}>{fmtPct(chg20)}</b>
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-1 mt-2">
           {RANGES.map(([label, d]) => (
@@ -179,7 +264,7 @@ export default function MarketOverview({ moneyFlow, onSelectStock }) {
             </button>
           ))}
         </div>
-        <div className="mt-2"><IndexChart data={data} /></div>
+        <div className="mt-2"><IndexChart data={data} intraday={days === 0} previousClose={index?.previousClose ?? null} /></div>
       </div>
 
       {/* 盤後市場概況（成交金額、漲跌家數、三大法人；皆為收盤後資料，無官方即時版） */}
