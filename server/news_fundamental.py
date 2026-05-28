@@ -4,12 +4,15 @@
 基本面：FinMind 免費 API
 """
 
+import logging
 import ssl
 from datetime import datetime, timedelta, timezone
 import httpx
 import feedparser
 from sqlalchemy import select
 from db import NewsCache, StockName, get_session
+
+log = logging.getLogger("uvicorn.error")
 
 FINMIND_BASE = "https://api.finmindtrade.com/api/v4/data"
 GOOGLE_NEWS_URL = "https://news.google.com/rss/search"
@@ -40,6 +43,75 @@ def _resolve_company_name(symbol: str, company_name: str = "") -> str:
             select(StockName).where(StockName.symbol == symbol)
         ).scalar_one_or_none()
     return rec.name if rec else symbol
+
+
+# ──────────────────────────────────────────────
+# 全球地緣／盤勢新聞（亞、歐、美 + 地緣政治）
+# ──────────────────────────────────────────────
+
+# 每個分類用 Google News 中文版做關鍵字搜尋，覆蓋面比單一財經 RSS 廣。
+_GLOBAL_CATEGORIES = {
+    "asia":    {"label": "亞股", "query": "亞股 OR 日經 OR 韓股 OR 港股"},
+    "europe":  {"label": "歐股", "query": "歐股 OR 德國DAX OR 富時100"},
+    "us":      {"label": "美股", "query": "美股 OR 道瓊 OR 那斯達克 OR S&P500"},
+    "geopol":  {"label": "地緣政治", "query": "地緣政治 OR 美中 OR 聯準會 OR 戰爭 OR 通膨"},
+}
+
+# 30 分鐘 in-memory 快取，避免每次 refresh 都打 Google News
+_GLOBAL_CACHE: dict[str, tuple[datetime, list[dict]]] = {}
+_GLOBAL_TTL = timedelta(minutes=30)
+
+
+def fetch_global_news(category: str = "all", per_cat: int = 8) -> dict:
+    """回傳分類後的全球新聞：{categories: [{key, label, news: [...]}]}。
+
+    當交易日不同時區開盤時段（亞/歐/美），不同分類的時效性差很大，所以分開抓。
+    結果用 30 min 快取（同時段內多人查不會重打 Google News）。"""
+    cats = (
+        list(_GLOBAL_CATEGORIES.items()) if category == "all"
+        else [(category, _GLOBAL_CATEGORIES[category])] if category in _GLOBAL_CATEGORIES
+        else []
+    )
+    if not cats:
+        return {"error": f"未知分類 {category}", "valid": list(_GLOBAL_CATEGORIES)}
+
+    now = datetime.now(timezone.utc)
+    out = []
+    transport = httpx.HTTPTransport(retries=2, verify=_SSL_CTX)
+    with httpx.Client(headers=BROWSER_UA, timeout=15, follow_redirects=True, transport=transport) as client:
+        for key, info in cats:
+            cached = _GLOBAL_CACHE.get(key)
+            if cached and (now - cached[0]) < _GLOBAL_TTL:
+                items = cached[1]
+            else:
+                items = []
+                try:
+                    params = {"q": f"{info['query']} when:1d", "hl": "zh-TW", "gl": "TW", "ceid": "TW:zh-Hant"}
+                    resp = client.get(GOOGLE_NEWS_URL, params=params)
+                    resp.raise_for_status()
+                    feed = feedparser.parse(resp.content)
+                    for entry in feed.entries[:per_cat * 2]:  # 抓多一點再去重/截
+                        title = (entry.get("title") or "").strip()
+                        if not title:
+                            continue
+                        pub = entry.get("published_parsed")
+                        pub_dt = datetime(*pub[:6], tzinfo=timezone.utc) if pub else now
+                        if (now - pub_dt) > timedelta(hours=36):
+                            continue
+                        items.append({
+                            "title": title,
+                            "url": entry.get("link", ""),
+                            "source": (entry.get("source", {}) or {}).get("title", ""),
+                            "published_at": pub_dt.replace(tzinfo=None).isoformat(),
+                        })
+                    items = items[:per_cat]
+                    _GLOBAL_CACHE[key] = (now, items)
+                except Exception as e:
+                    log.warning("Google News %s（%s）抓取失敗：%s", key, info["label"], e)
+
+            out.append({"key": key, "label": info["label"], "news": items})
+
+    return {"categories": out, "fetched_at": now.isoformat()}
 
 
 def fetch_news(symbol: str, company_name: str = "", limit: int = 10) -> list[dict]:
@@ -79,8 +151,8 @@ def fetch_news(symbol: str, company_name: str = "", limit: int = 10) -> list[dic
                 "is_major": is_major,
                 "summary": None,
             })
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Google News RSS %s 解析失敗（沿用快取）：%s", symbol, e)
 
     # 寫入快取（一次查出已存在標題，批次去重）
     with get_session() as session:
@@ -133,7 +205,8 @@ def _finmind_get(dataset: str, stock_id: str, start_date: str) -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
         return data.get("data", [])
-    except Exception:
+    except Exception as e:
+        log.warning("FinMind %s 抓取失敗：%s", dataset, e)
         return []
 
 

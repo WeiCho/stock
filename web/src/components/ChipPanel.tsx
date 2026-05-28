@@ -1,24 +1,28 @@
-function ChipRow({ label, today, cum5d, trend }: any) {
-  const sign = today >= 0 ? 'text-red-400' : 'text-green-400'
+import type { ChipResponse } from '../types'
+
+function ChipRow({ label, today, cum5d, trend }:
+  { label: string; today?: number; cum5d?: number; trend?: string }) {
+  const sign = (today ?? 0) >= 0 ? 'text-red-400' : 'text-green-400'
   return (
     <div className="border border-slate-700 rounded-lg p-3 space-y-1">
       <div className="flex justify-between items-center">
         <span className="text-slate-400 text-sm">{label}</span>
         <span className={`font-mono font-bold ${sign}`}>
-          {today >= 0 ? '+' : ''}{today?.toLocaleString()} 張
+          {today != null && (today >= 0 ? '+' : '')}{today?.toLocaleString() ?? '—'} 張
         </span>
       </div>
       <div className="flex gap-3 text-xs text-slate-500">
         {trend && <span>{trend}</span>}
-        {cum5d !== undefined && <span>5日累計 {cum5d >= 0 ? '+' : ''}{cum5d?.toLocaleString()}</span>}
+        {cum5d !== undefined && <span>5日累計 {cum5d >= 0 ? '+' : ''}{cum5d.toLocaleString()}</span>}
       </div>
     </div>
   )
 }
 
-export default function ChipPanel({ data }) {
+export default function ChipPanel({ data }: { data: ChipResponse | null }) {
   if (!data) return null
   const { foreign, trust, dealer, total_today, summary, date } = data
+  const total = total_today ?? 0
 
   return (
     <div className="space-y-3">
@@ -31,8 +35,8 @@ export default function ChipPanel({ data }) {
       <ChipRow label="自營商" today={dealer?.today} trend={dealer?.trend} />
       <div className="flex justify-between text-sm border-t border-slate-700 pt-2">
         <span className="text-slate-400">三大合計</span>
-        <span className={`font-mono font-bold ${total_today >= 0 ? 'text-red-400' : 'text-green-400'}`}>
-          {total_today >= 0 ? '+' : ''}{total_today?.toLocaleString()} 張
+        <span className={`font-mono font-bold ${total >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+          {total >= 0 ? '+' : ''}{total.toLocaleString()} 張
         </span>
       </div>
     </div>

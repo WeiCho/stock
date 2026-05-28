@@ -1,16 +1,43 @@
-const SIGNALS = {
+import { useEffect, useState } from 'react'
+import { api } from '../api'
+import type { BacktestResponse, PineResponse } from '../types'
+
+// 後備清單：API 拿不到時用（離線開發 / 後端臨時掛掉）。
+// 正常情況會被 /backtest/signals 動態覆蓋，包含後端新增的訊號（如 best_four_buy/sell）。
+const FALLBACK_SIGNALS: Record<string, string> = {
   ma_cross: 'MA20×MA60 黃金交叉',
   ma_death: 'MA20×MA60 死亡交叉',
-  weekly_ma_cross: '週MA 黃金交叉',
-  kd_low_cross: 'KD 低檔交叉 K<30',
-  kd_high_cross: 'KD 高檔交叉 K>70',
-  macd_turn_pos: 'MACD 轉正',
-  macd_turn_neg: 'MACD 轉負',
-  rsi_oversold: 'RSI 超賣 <30',
-  rsi_overbought: 'RSI 超買 >70',
 }
 
-export default function BacktestPanel({ data, signal, onSignalChange }) {
+interface Props {
+  data: BacktestResponse | null
+  signal: string
+  onSignalChange: (s: string) => void
+}
+
+export default function BacktestPanel({ data, signal, onSignalChange }: Props) {
+  const [signals, setSignals] = useState<Record<string, string>>(FALLBACK_SIGNALS)
+  useEffect(() => {
+    api.signals().then(setSignals).catch(() => {})  // 失敗就維持 fallback
+  }, [])
+
+  const handleDownloadPine = async () => {
+    try {
+      const sym = data?.symbol
+      if (!sym) return
+      const res = await api.pine(sym, signal) as PineResponse
+      const blob = new Blob([res.pine_code], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${sym}_${signal}.pine`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('Pine 下載失敗', e)
+    }
+  }
+
   if (!data) return (
     <div className="space-y-3">
       <select
@@ -18,7 +45,7 @@ export default function BacktestPanel({ data, signal, onSignalChange }) {
         onChange={e => onSignalChange(e.target.value)}
         className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200"
       >
-        {Object.entries(SIGNALS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        {Object.entries(signals).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
       </select>
     </div>
   )
@@ -33,10 +60,14 @@ export default function BacktestPanel({ data, signal, onSignalChange }) {
           onChange={e => onSignalChange(e.target.value)}
           className="bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200"
         >
-          {Object.entries(SIGNALS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          {Object.entries(signals).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <span className="text-sm text-slate-400">共觸發 <b className="text-slate-200">{total_triggers}</b> 次</span>
         {low_sample_warning && <span className="text-xs bg-yellow-900 text-yellow-300 px-2 py-0.5 rounded-full">樣本不足</span>}
+        <button onClick={handleDownloadPine}
+          className="ml-auto text-xs px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200">
+          下載 Pine
+        </button>
       </div>
 
       <div className="overflow-x-auto">
@@ -68,7 +99,7 @@ export default function BacktestPanel({ data, signal, onSignalChange }) {
         </table>
       </div>
 
-      {trigger_dates?.length > 0 && (
+      {trigger_dates && trigger_dates.length > 0 && (
         <div className="text-xs text-slate-500">
           最近觸發：{trigger_dates.join('、')}
         </div>

@@ -1,0 +1,4 @@
+# 開發/測試專用相依，正式 runtime 不需要
+# 安裝：./.venv/bin/pip install -r requirements-dev.txt
+# 跑測試：./.venv/bin/python -m pytest server/tests -v
+pytest>=8.0

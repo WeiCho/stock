@@ -76,7 +76,8 @@ async def _scan_one(client: httpx.AsyncClient, symbol: str, min_amount: int, per
         resp = await client.get(f"{FUGLE_BASE}/intraday/trades/{symbol}", params={"limit": 1000})
         resp.raise_for_status()
         data = resp.json()
-    except Exception:
+    except Exception as e:
+        log.info("Fugle trades %s 抓取失敗（跳過該股，不影響全市場掃描）：%s", symbol, e)
         return None
     bigs = _big_from_trades(data, min_amount)
     if not bigs:
@@ -114,8 +115,9 @@ async def intraday_candles(symbol: str, timeframe: str = "5") -> dict | None:
     if isinstance(candles, Exception):
         # candles 抓不到是真失敗，記錄狀態碼/錯誤訊息
         if isinstance(candles, httpx.HTTPStatusError):
+            body = candles.response.text[:200].replace("\n", " ").replace("\r", " ")
             log.warning("Fugle candles %s 失敗 HTTP %s：%s",
-                        symbol, candles.response.status_code, candles.response.text[:200])
+                        symbol, candles.response.status_code, body)
         else:
             log.warning("Fugle candles %s 失敗：%s", symbol, candles)
         return None

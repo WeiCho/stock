@@ -14,7 +14,7 @@
     "moduleDetection": "force",
     "noEmit": true,
     "strict": true,
-    "noImplicitAny": false
+    "noImplicitAny": true
   },
   "include": ["src"]
 }

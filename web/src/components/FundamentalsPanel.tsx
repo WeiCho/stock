@@ -1,4 +1,6 @@
-function Metric({ label, value, unit = '' }) {
+import type { FundamentalsResponse } from '../types'
+
+function Metric({ label, value, unit = '' }: { label: string; value?: number | null; unit?: string }) {
   return (
     <div className="bg-slate-800 rounded-lg p-3 text-center">
       <p className="text-xs text-slate-500 mb-1">{label}</p>
@@ -9,7 +11,7 @@ function Metric({ label, value, unit = '' }) {
   )
 }
 
-export default function FundamentalsPanel({ data }) {
+export default function FundamentalsPanel({ data }: { data: FundamentalsResponse | null }) {
   if (!data) return null
   const { eps_latest, pe, revenue_mom, revenue_yoy, yield_rate, note } = data
 

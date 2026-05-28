@@ -1,18 +1,20 @@
-const BIAS_STYLE = {
+import type { OutlookResponse } from '../types'
+
+const BIAS_STYLE: Record<string, string> = {
   偏多: 'text-red-400 bg-red-900/40',
   偏空: 'text-green-400 bg-green-900/40',
   中性: 'text-yellow-400 bg-yellow-900/40',
 }
 
-export default function OutlookPanel({ data }) {
+export default function OutlookPanel({ data }: { data: OutlookResponse | null }) {
   if (!data) return null
-  const { bias, score, trend, factors = [], expected, support, resistance, close, disclaimer } = data
+  const { bias, score = 0, trend, factors = [], expected, support, resistance, close, disclaimer } = data
 
   return (
     <div className="space-y-4">
       {/* 方向偏向 + 強弱條 */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className={`text-xl font-bold px-3 py-1 rounded-lg ${BIAS_STYLE[bias] || 'text-slate-300'}`}>{bias}</span>
+        <span className={`text-xl font-bold px-3 py-1 rounded-lg ${(bias && BIAS_STYLE[bias]) || 'text-slate-300'}`}>{bias}</span>
         <span className="text-slate-400 text-sm">綜合研判 · 收盤 {close} · {trend}</span>
         <div className="flex-1 min-w-[140px] h-2 bg-slate-800 rounded-full relative">
           <div className="absolute top-0 bottom-0 left-1/2 w-px bg-slate-600" />

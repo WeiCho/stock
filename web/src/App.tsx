@@ -1,5 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, ReactNode } from 'react'
 import { api } from './api'
+import type { Bar, MaPoint } from './types'
+import { useAsync } from './hooks/useAsync'
+import { toTime as normalizeTime } from './lib/charts'
 import PriceChart from './components/PriceChart'
 import TechnicalPanel from './components/TechnicalPanel'
 import ChipPanel from './components/ChipPanel'
@@ -8,12 +11,15 @@ import FundamentalsPanel from './components/FundamentalsPanel'
 import NewsPanel from './components/NewsPanel'
 import MarketOverview from './components/MarketOverview'
 import OutlookPanel from './components/OutlookPanel'
+import GlobalPanel from './components/GlobalPanel'
+import FuturesPanel from './components/FuturesPanel'
+import MacroPanel from './components/MacroPanel'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '基本面', '新聞']
 
 // 穩定的空物件 reference — 避免每次 render 都產生新 `{}` 害 PriceChart effect 重跑
-const EMPTY_MAS: Record<string, any> = {}
+const EMPTY_MAS: Record<string, MaPoint[]> = {}
 
 // K 線圖時間框架：當日（Fugle 盤中 5 分鐘）+ 由日 K 重採樣的 6 種；days = 抓取的日線天數
 const CHART_TFS: { tf: string; label: string; days: number }[] = [
@@ -26,28 +32,11 @@ const CHART_TFS: { tf: string; label: string; days: number }[] = [
   { tf: '1mo', label: '月K', days: 1825 },
 ]
 
-function useAsync(fn, deps) {
-  const [state, setState] = useState<{ data: any; loading: boolean; error: any }>({ data: null, loading: false, error: null })
-  useEffect(() => {
-    let cancelled = false
-    setState(s => ({ ...s, loading: true, error: null }))
-    fn().then(data => {
-      if (!cancelled) setState({ data, loading: false, error: null })
-    }).catch(err => {
-      if (!cancelled) setState({ data: null, loading: false, error: err.message })
-    })
-    return () => { cancelled = true }
-    // useAsync 是通用 helper，deps 由呼叫端動態提供
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
-  return state
-}
-
 function Spinner() {
   return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
 }
 
-function Card({ title, children, className = '' }: { title?: any; children?: any; className?: string }) {
+function Card({ title, children, className = '' }: { title?: ReactNode; children?: ReactNode; className?: string }) {
   return (
     <div className={`bg-slate-900 border border-slate-700 rounded-xl p-4 ${className}`}>
       {title && <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">{title}</h3>}
@@ -56,28 +45,21 @@ function Card({ title, children, className = '' }: { title?: any; children?: any
   )
 }
 
-// 統一處理 lightweight-charts 的 time：ISO datetime → epoch 秒；'YYYY-MM-DD' 原樣（v5 接受字串）。
-// 與 PriceChart / MarketOverview 的 toTime 邏輯一致，避免盤中→日K 切換 race condition 時用錯格式。
-function normalizeTime(s: string): any {
-  return (typeof s === 'string' && s.includes('T'))
-    ? Math.floor(new Date(s).getTime() / 1000)
-    : s
-}
-
 // 把日K 資料切成 MA 序列
-function buildMas(priceData, technicalData) {
+type PriceResponse = { data?: Bar[]; previousClose?: number | null }
+type TechnicalResponse = { ma?: Record<string, number> }
+function buildMas(priceData: PriceResponse | null, technicalData: TechnicalResponse | null): Record<string, MaPoint[]> {
   if (!priceData?.data?.length || !technicalData?.ma) return {}
   const maKeys = Object.keys(technicalData.ma)
-  // 只取 close 序列，搭配 pandas-ta 已計算好的最終值
-  // 在前端重新計算 MA，不需多一次 API
+  // 只取 close 序列；前端重新計算 MA，不需多一次 API
   const closes = priceData.data.map(r => ({ date: r.date, close: r.close }))
-  const result: Record<string, { time: any; value: number }[]> = {}
+  const result: Record<string, MaPoint[]> = {}
   for (const key of maKeys) {
     const period = parseInt(key.replace('ma', ''))
-    const series: { time: any; value: number }[] = []
+    const series: MaPoint[] = []
     for (let i = period - 1; i < closes.length; i++) {
       const avg = closes.slice(i - period + 1, i + 1).reduce((s, r) => s + r.close, 0) / period
-      series.push({ time: normalizeTime(closes[i].date), value: parseFloat(avg.toFixed(2)) })
+      series.push({ time: normalizeTime(closes[i].date) as string | number, value: parseFloat(avg.toFixed(2)) })
     }
     result[key] = series
   }
@@ -90,7 +72,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('綜合研判')
   const [btSignal, setBtSignal] = useState('ma_cross')
   const [chartTf, setChartTf] = useState('1d')
-  const [view, setView] = useState('market') // 'market' | 'stock'
+  const [view, setView] = useState<'market' | 'stock' | 'global' | 'futures' | 'macro'>('market')
   const [suggestions, setSuggestions] = useState<any[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const searchRef = useRef<HTMLFormElement>(null)
@@ -109,8 +91,15 @@ export default function App() {
   const outlook = useAsync(() => symbol ? api.outlook(symbol) : Promise.resolve(null), [symbol])
   const chip = useAsync(() => symbol ? api.chip(symbol) : Promise.resolve(null), [symbol])
   const backtest = useAsync(() => symbol ? api.backtest(symbol, btSignal) : Promise.resolve(null), [symbol, btSignal])
-  const fundamentals = useAsync(() => symbol ? api.fundamentals(symbol) : Promise.resolve(null), [symbol])
-  const news = useAsync(() => symbol ? api.news(symbol) : Promise.resolve(null), [symbol])
+  // 只在切到該 tab 時才 fetch — 省 FinMind 配額 / 減少初次 render 等待時間
+  const fundamentals = useAsync(
+    () => (symbol && activeTab === '基本面') ? api.fundamentals(symbol) : Promise.resolve(null),
+    [symbol, activeTab],
+  )
+  const news = useAsync(
+    () => (symbol && activeTab === '新聞') ? api.news(symbol) : Promise.resolve(null),
+    [symbol, activeTab],
+  )
 
   // memoise — buildMas 每次 render 都會回新物件，會讓 PriceChart 的 useEffect 反覆 fire 拆掉重建 chart
   const mas = useMemo(() => buildMas(price.data, technical.data), [price.data, technical.data])
@@ -132,7 +121,7 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const selectSuggestion = (s) => {
+  const selectSuggestion = (s: { symbol: string; name?: string; market?: string }) => {
     setInput(s.symbol)
     setSuggestions([])
     setShowSuggestions(false)
@@ -142,7 +131,7 @@ export default function App() {
   }
 
   // 從大盤排行等處點股票代碼 → 直接分析該股
-  const goStock = (sym) => {
+  const goStock = (sym: string) => {
     setInput(sym)
     setShowSuggestions(false)
     setSymbol(sym)
@@ -150,7 +139,7 @@ export default function App() {
     setActiveTab('綜合研判')
   }
 
-  const handleSearch = (e) => {
+  const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const v = input.trim()
     if (!v) return
@@ -204,6 +193,18 @@ export default function App() {
               className={view === 'market' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
               大盤
             </button>
+            <button onClick={() => setView('global')}
+              className={view === 'global' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
+              全球
+            </button>
+            <button onClick={() => setView('futures')}
+              className={view === 'futures' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
+              期貨
+            </button>
+            <button onClick={() => setView('macro')}
+              className={view === 'macro' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
+              總經
+            </button>
             {symbol && (
               <button onClick={() => setView('stock')}
                 className={view === 'stock' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
@@ -220,6 +221,28 @@ export default function App() {
             {market.error && <p className="text-red-400 text-sm">{market.error}</p>}
             <ErrorBoundary label="大盤總覽">
               <MarketOverview moneyFlow={market.data} onSelectStock={goStock} />
+            </ErrorBoundary>
+          </Card>
+        )}
+
+        {view === 'global' && (
+          <ErrorBoundary label="全球盤勢">
+            <GlobalPanel />
+          </ErrorBoundary>
+        )}
+
+        {view === 'futures' && (
+          <Card title="期貨 / 國際商品">
+            <ErrorBoundary label="期貨">
+              <FuturesPanel />
+            </ErrorBoundary>
+          </Card>
+        )}
+
+        {view === 'macro' && (
+          <Card>
+            <ErrorBoundary label="總體經濟">
+              <MacroPanel onJumpGlobal={() => setView('global')} />
             </ErrorBoundary>
           </Card>
         )}

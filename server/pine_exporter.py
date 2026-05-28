@@ -116,16 +116,76 @@ if signal
     strategy.entry("Buy", strategy.long)
 strategy.exit("Exit", "Buy", profit=close * {profit_ratio}, loss=close * {loss_ratio})
 """,
-}
 
-# 沒有特定模板的訊號，用通用模板
-GENERIC_TEMPLATE = """\
+    "best_four_buy": """\
 //@version=5
 // 由 Taiwan Stock Skill 自動生成
+// 訊號：四大買點（twstock BestFourPoint）  勝率（20天）：{win_rate_20}%  平均報酬：{avg_return_20}%
+// 條件：負乖離 pivot AND 任一{{量增收紅 / 量縮價不跌 / 3日均剛轉漲 / 3日均>6日均}}
+strategy("四大買點 [{symbol}]", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+ma3 = ta.sma(close, 3)
+ma6 = ta.sma(close, 6)
+plot(ma3, color=color.orange, title="MA3")
+plot(ma6, color=color.blue, title="MA6")
+
+c1 = volume > volume[1] and close > open
+c2 = volume < volume[1] and close > open[1]
+c3 = ma3 > ma3[1] and ma3[1] <= ma3[2]
+c4 = ma3 > ma6
+
+bias = ma3 - ma6
+all_negative = ta.highest(bias, 5) < 0
+bars_since_low = ta.barssince(bias == ta.lowest(bias, 5))
+pivot = all_negative and (bars_since_low == 2 or bars_since_low == 3)
+
+signal = pivot and (c1 or c2 or c3 or c4)
+if signal
+    strategy.entry("Buy", strategy.long)
+strategy.exit("Exit", "Buy", profit=close * {profit_ratio}, loss=close * {loss_ratio})
+
+bgcolor(signal ? color.new(color.green, 80) : na)
+""",
+
+    "best_four_sell": """\
+//@version=5
+// 由 Taiwan Stock Skill 自動生成
+// 訊號：四大賣點（twstock BestFourPoint）  勝率（20天）：{win_rate_20}%  平均報酬：{avg_return_20}%
+// 條件：正乖離 pivot AND 任一{{量增收黑 / 量縮價跌 / 3日均剛轉跌 / 3日均<6日均}}
+strategy("四大賣點 [{symbol}]", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+ma3 = ta.sma(close, 3)
+ma6 = ta.sma(close, 6)
+plot(ma3, color=color.orange, title="MA3")
+plot(ma6, color=color.blue, title="MA6")
+
+c1 = volume > volume[1] and close < open
+c2 = volume < volume[1] and close < open[1]
+c3 = ma3 < ma3[1] and ma3[1] >= ma3[2]
+c4 = ma3 < ma6
+
+bias = ma3 - ma6
+all_positive = ta.lowest(bias, 5) > 0
+bars_since_high = ta.barssince(bias == ta.highest(bias, 5))
+pivot = all_positive and (bars_since_high == 2 or bars_since_high == 3)
+
+signal = pivot and (c1 or c2 or c3 or c4)
+if signal
+    strategy.entry("Sell", strategy.short)
+strategy.exit("Exit", "Sell", profit=close * {profit_ratio}, loss=close * {loss_ratio})
+
+bgcolor(signal ? color.new(color.red, 80) : na)
+""",
+}
+
+# Fallback：理論上目前 11 個訊號都有專屬模板，跑不到這條。
+# 未來如果加新訊號（例如自訂組合）忘了補模板，就會落到這裡。
+GENERIC_TEMPLATE = """\
+//@version=5
+// 由 Taiwan Stock Skill 自動生成（fallback 模板）
 // 訊號：{signal_name}  勝率（20天）：{win_rate_20}%  平均報酬：{avg_return_20}%
-// 請依據回測結果手動在 TradingView 中設定進出場條件
+// 此訊號未提供 Pine 實作；請依回測統計於 TradingView 上自行撰寫進出場條件。
 indicator("{signal_name} [{symbol}]", overlay=true)
-// TODO: 實作訊號邏輯
 """
 
 

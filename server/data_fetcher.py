@@ -255,7 +255,8 @@ def fetch_tpex_stock_month(symbol: str, year: int, month: int) -> pd.DataFrame:
             resp = client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except Exception:
+    except Exception as e:
+        log.warning("TPEx tradingStock %s %d/%d 抓取失敗：%s", symbol, year, month, e)
         return pd.DataFrame()
 
     tables = data.get("tables") or []
@@ -302,7 +303,8 @@ def fetch_daily_institutional_bulk(target_date: Optional[date] = None) -> int:
             resp = client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except Exception:
+    except Exception as e:
+        log.warning("TWSE T86 %s 抓三大法人失敗：%s", target_date, e)
         return 0
 
     if data.get("stat") != "OK" or not data.get("data"):
@@ -401,7 +403,8 @@ def fetch_market_breadth(target_date: Optional[date] = None) -> dict:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-        except Exception:
+        except Exception as e:
+            log.info("MI_INDEX MS %s 抓盤後概況失敗（嘗試前一日）：%s", d, e)
             continue
         if data.get("stat") != "OK":
             continue
@@ -463,7 +466,8 @@ async def fetch_live_index() -> dict:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except Exception:
+    except Exception as e:
+        log.warning("TWSE MIS 即時加權指數抓取失敗：%s", e)
         return {}
 
     arr = data.get("msgArray") or []
@@ -511,7 +515,8 @@ def fetch_taiex_finmind(years: int = 5) -> int:
             })
             resp.raise_for_status()
             rows = resp.json().get("data", [])
-    except Exception:
+    except Exception as e:
+        log.warning("FinMind TAIEX 歷史抓取失敗：%s", e)
         return 0
     if not rows:
         return 0
@@ -563,7 +568,8 @@ def fetch_taiex_history(months: int = 12) -> int:
                     resp = client.get(url, params=params)
                     resp.raise_for_status()
                     data = resp.json()
-            except Exception:
+            except Exception as e:
+                log.info("TWSE MI_5MINS_HIST %s 抓取失敗（重試下一月）：%s", date_str, e)
                 _sleep()
                 continue
 
@@ -699,13 +705,14 @@ def resample_ohlc(df: pd.DataFrame, tf: str) -> pd.DataFrame:
         return d.resample("ME").agg(ohlc).dropna()
     if tf in ("1w", "weekly"):
         return d.resample("W-FRI").agg(ohlc).dropna()
-    if tf == "3w":
+    if tf in ("2w", "3w"):
+        n = int(tf[:-1])  # 2 或 3
         w = d.resample("W-FRI").agg(ohlc).dropna()
         if w.empty:
             return w
-        buckets = [i // 3 for i in range(len(w))]
+        buckets = [i // n for i in range(len(w))]
         out = w.groupby(buckets).agg(ohlc)
-        out.index = pd.Index([w.index[min((i + 1) * 3 - 1, len(w) - 1)] for i in range(len(out))])
+        out.index = pd.Index([w.index[min((i + 1) * n - 1, len(w) - 1)] for i in range(len(out))])
         return out
     if tf in ("3d", "5d"):
         n = int(tf[:-1])
@@ -837,8 +844,8 @@ def fetch_stock_list() -> int:
             name = row[1].strip()
             if symbol and name and _is_tradable_stock(symbol):
                 stocks.append({"symbol": symbol, "name": name, "market": "twse"})
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("TWSE 上市股票清單抓取失敗：%s", e)
 
     _sleep()
 
@@ -854,8 +861,8 @@ def fetch_stock_list() -> int:
             name = str(row.get("CompanyName", "")).strip()
             if symbol and name and _is_tradable_stock(symbol):
                 stocks.append({"symbol": symbol, "name": name, "market": "tpex"})
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("TPEx 上櫃股票清單抓取失敗：%s", e)
 
     if not stocks:
         return 0
@@ -889,7 +896,8 @@ def fetch_stock_industry() -> int:
             resp = client.get(FINMIND_BASE, params={"dataset": "TaiwanStockInfo"})
             resp.raise_for_status()
             rows = resp.json().get("data", [])
-    except Exception:
+    except Exception as e:
+        log.warning("FinMind TaiwanStockInfo（產業別）抓取失敗：%s", e)
         return 0
 
     mapping: dict[str, str] = {}

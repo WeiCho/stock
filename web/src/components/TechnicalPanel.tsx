@@ -1,9 +1,12 @@
-function Badge({ type, name }) {
+import type { TechnicalResponse, TechnicalSignal } from '../types'
+
+function Badge({ type, name }: TechnicalSignal) {
   const color = type === 'bullish' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
   return <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>{name}</span>
 }
 
-function Row({ label, value, sub }: any) {
+function Row({ label, value, sub }:
+  { label: string; value?: number | string | null; sub?: string }) {
   return (
     <div className="flex justify-between py-1 border-b border-slate-800 text-sm">
       <span className="text-slate-400">{label}</span>
@@ -15,7 +18,7 @@ function Row({ label, value, sub }: any) {
   )
 }
 
-export default function TechnicalPanel({ data }) {
+export default function TechnicalPanel({ data }: { data: TechnicalResponse | null }) {
   if (!data) return null
   const { ma, rsi, macd, kd, bollinger, trend, signals, close, support, resistance } = data
 
@@ -33,7 +36,7 @@ export default function TechnicalPanel({ data }) {
         <div>
           <p className="text-xs text-slate-500 uppercase mb-1">均線</p>
           {Object.entries(ma ?? {}).map(([k, v]) => (
-            <Row key={k} label={k.toUpperCase()} value={v} />
+            <Row key={k} label={k.toUpperCase()} value={v as number | string | null} />
           ))}
         </div>
         <div>

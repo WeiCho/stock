@@ -1,4 +1,6 @@
-export default function NewsPanel({ news }) {
+import type { NewsItem } from '../types'
+
+export default function NewsPanel({ news }: { news?: NewsItem[] }) {
   if (!news?.length) return <p className="text-slate-500 text-sm">目前無相關新聞</p>
 
   return (

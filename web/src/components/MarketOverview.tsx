@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { createChart, AreaSeries, BaselineSeries, LineSeries, UTCTimestamp, Time } from 'lightweight-charts'
+import { createChart, AreaSeries, BaselineSeries, LineSeries } from 'lightweight-charts'
 import { api } from '../api'
+import type { Bar, BigOrder, MoneyFlowResponse, RankRow, SectorRow } from '../types'
+import { toTime, isTradingHours, SESSION_MINUTES } from '../lib/charts'
 
-// 日線（'YYYY-MM-DD' 字串）/ 盤中分鐘（ISO datetime → epoch 秒）共用
-const toTime = (s: string): Time => (typeof s === 'string' && s.includes('T')
-  ? (Math.floor(new Date(s).getTime() / 1000) as UTCTimestamp)
-  : s as Time)
-
-function IndexChart({ data, intraday, previousClose }: { data?: any[]; intraday?: boolean; previousClose?: number | null }) {
+function IndexChart({ data, intraday, previousClose }: { data?: Bar[]; intraday?: boolean; previousClose?: number | null }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = ref.current
@@ -83,7 +80,7 @@ function IndexChart({ data, intraday, previousClose }: { data?: any[]; intraday?
     if (intraday && data.length >= 2) {
       const dt = (new Date(data[1].date).getTime() - new Date(data[0].date).getTime()) / 60000
       if (dt > 0) {
-        const expected = Math.round(270 / dt)  // 09:00–13:30
+        const expected = Math.round(SESSION_MINUTES / dt)  // 09:00–13:30
         chart.timeScale().applyOptions({ rightOffset: Math.max(0, expected - data.length) })
       }
     }
@@ -97,23 +94,14 @@ function IndexChart({ data, intraday, previousClose }: { data?: any[]; intraday?
 }
 
 // 台股慣例：紅漲（正）、綠跌（負）
-const sign = (n) => (n >= 0 ? 'text-red-400' : 'text-green-400')
-const fmtLots = (n) => (n >= 0 ? '+' : '') + Math.round(n).toLocaleString()
-const fmtPct = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`)
-const fmtIdx = (v) => (v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
-const fmtDate = (d) => (d && d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : d)
-const fmtTurnover = (n) => (n == null ? '—' : n >= 1e12 ? `${(n / 1e12).toFixed(2)} 兆` : `${Math.round(n / 1e8).toLocaleString()} 億`)
+const sign = (n: number) => (n >= 0 ? 'text-red-400' : 'text-green-400')
+const fmtLots = (n: number) => (n >= 0 ? '+' : '') + Math.round(n).toLocaleString()
+const fmtPct = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`)
+const fmtIdx = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+const fmtDate = (d: string | null | undefined) => (d && d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : d)
+const fmtTurnover = (n: number | null | undefined) => (n == null ? '—' : n >= 1e12 ? `${(n / 1e12).toFixed(2)} 兆` : `${Math.round(n / 1e8).toLocaleString()} 億`)
 
-// 台股盤中（週一到五 09:00–13:30 台北時間）；用於 gate 即時/大單輪詢，避免休市時無謂打 API
-function isTradingHours(): boolean {
-  const tw = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
-  const day = tw.getDay() // 0=Sun, 6=Sat
-  if (day === 0 || day === 6) return false
-  const hm = tw.getHours() * 100 + tw.getMinutes()
-  return hm >= 900 && hm <= 1330
-}
-
-function FlowTile({ label, value }) {
+function FlowTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="bg-slate-800 rounded-lg p-3 text-center">
       <p className="text-xs text-slate-500 mb-1">{label}</p>
@@ -123,7 +111,8 @@ function FlowTile({ label, value }) {
   )
 }
 
-function RankTable({ title, rows, field, onSelect }) {
+function RankTable({ title, rows, field, onSelect }:
+  { title: string; rows?: RankRow[]; field: 'foreign' | 'trust' | 'dealer'; onSelect?: (sym: string) => void }) {
   if (!rows?.length) return null
   return (
     <div>
@@ -135,7 +124,7 @@ function RankTable({ title, rows, field, onSelect }) {
               className="border-b border-slate-800 cursor-pointer hover:bg-slate-800/60">
               <td className="py-1 text-blue-300 font-mono">{r.symbol}</td>
               <td className="py-1 text-slate-400 truncate max-w-[8rem]">{r.name}</td>
-              <td className={`py-1 text-right font-mono ${sign(r[field])}`}>{fmtLots(r[field])}</td>
+              <td className={`py-1 text-right font-mono ${sign(r[field] ?? 0)}`}>{fmtLots(r[field] ?? 0)}</td>
             </tr>
           ))}
         </tbody>
@@ -144,7 +133,7 @@ function RankTable({ title, rows, field, onSelect }) {
   )
 }
 
-function SectorList({ title, rows }) {
+function SectorList({ title, rows }: { title: string; rows?: SectorRow[] }) {
   if (!rows?.length) return null
   return (
     <div>
@@ -167,7 +156,8 @@ function SectorList({ title, rows }) {
 // 0 = 當日（Fugle 盤中 5 分鐘）；其餘為日線歷史的回溯天數
 const RANGES: [string, number][] = [['當日', 0], ['3日', 3], ['1月', 30], ['3月', 90], ['6月', 180], ['1年', 365], ['5年', 1825]]
 
-export default function MarketOverview({ moneyFlow, onSelectStock }) {
+export default function MarketOverview({ moneyFlow, onSelectStock }:
+  { moneyFlow?: MoneyFlowResponse | null; onSelectStock?: (sym: string) => void }) {
   // 指數走勢：依選擇的時間區間抓取；當日 = Fugle IX0001 盤中分鐘 K
   const [days, setDays] = useState(180)
   const [index, setIndex] = useState<any>(null)
@@ -182,7 +172,12 @@ export default function MarketOverview({ moneyFlow, onSelectStock }) {
   const data = index?.data || []
   const latest = data.at(-1)
   const prev = data.at(-2)
-  const chgN = (n) => (data.length > n ? ((latest.close - data.at(-1 - n).close) / data.at(-1 - n).close * 100) : null)
+  const chgN = (n: number): number | null => {
+    if (data.length <= n || !latest) return null
+    const base = data.at(-1 - n)
+    if (!base?.close) return null
+    return ((latest.close - base.close) / base.close) * 100
+  }
   const chg5 = chgN(5)
   const chg20 = chgN(20)
 
@@ -218,7 +213,7 @@ export default function MarketOverview({ moneyFlow, onSelectStock }) {
         <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg p-3">
           <p className="text-xs text-amber-400 uppercase mb-2">🔥 今日大單敲進（單筆大額成交，盤中即時）</p>
           <div className="flex flex-wrap gap-2">
-            {bigOrders.orders.map(o => (
+            {bigOrders.orders.map((o: BigOrder) => (
               <button key={o.symbol} onClick={() => onSelectStock?.(o.symbol)}
                 className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">
                 <span className="text-amber-300 font-medium">{o.name}</span>
@@ -298,7 +293,7 @@ export default function MarketOverview({ moneyFlow, onSelectStock }) {
             <FlowTile label="三大法人合計" value={moneyFlow.summary.total} />
           </div>
 
-          {moneyFlow.sector_flow?.inflow?.length > 0 && (
+          {moneyFlow.sector_flow?.inflow && moneyFlow.sector_flow.inflow.length > 0 && (
             <div>
               <p className="text-xs text-slate-500 uppercase mb-2 mt-1">類股資金流向（三大法人淨買賣超，張）</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
