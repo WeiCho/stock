@@ -66,6 +66,8 @@ export interface BacktestResponse {
 export interface TechnicalSignal {
   type: 'bullish' | 'bearish'
   name: string
+  code?: string  // i18n key suffix → technical.signal.{code}
+  params?: Record<string, string | number>
 }
 
 export interface TechnicalResponse {
@@ -82,13 +84,16 @@ export interface TechnicalResponse {
 }
 
 export interface OutlookFactor {
-  label: string
+  label: string  // 中文 fallback
   weight: number
+  labelKey?: string | null  // i18n key（technical.signal.* 或 outlook.factor.*）
+  params?: Record<string, string | number>
 }
 
 export interface OutlookExpected {
   horizon_days: number
   basis: string
+  basis_code?: string  // i18n key → backtest.signal.{basis_code}
   win_rate: number
   avg_return: number
   target: number

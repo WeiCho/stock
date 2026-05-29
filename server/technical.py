@@ -91,32 +91,32 @@ def detect_signals(df: pd.DataFrame, timeframe: str = "daily") -> list[dict]:
         crossed_up = (prev[ma_short] <= prev[ma_long]) and (last[ma_short] > last[ma_long])
         crossed_dn = (prev[ma_short] >= prev[ma_long]) and (last[ma_short] < last[ma_long])
         if crossed_up:
-            signals.append({"name": f"{'日' if timeframe=='daily' else '週'}K 黃金交叉", "type": "bullish", "triggered": True})
+            signals.append({"name": f"{'日' if timeframe=='daily' else '週'}K 黃金交叉", "type": "bullish", "triggered": True, "code": "ma_golden", "params": {"tf": timeframe}})
         if crossed_dn:
-            signals.append({"name": f"{'日' if timeframe=='daily' else '週'}K 死亡交叉", "type": "bearish", "triggered": True})
+            signals.append({"name": f"{'日' if timeframe=='daily' else '週'}K 死亡交叉", "type": "bearish", "triggered": True, "code": "ma_death", "params": {"tf": timeframe}})
 
     # KD 低檔交叉（K < 20 且 K 由下穿 D）
     if "kd_k" in df.columns and "kd_d" in df.columns:
         kd_cross_up = (prev["kd_k"] <= prev["kd_d"]) and (last["kd_k"] > last["kd_d"])
         kd_cross_dn = (prev["kd_k"] >= prev["kd_d"]) and (last["kd_k"] < last["kd_d"])
         if kd_cross_up and last["kd_k"] < 30:
-            signals.append({"name": "KD 低檔黃金交叉（K<30）", "type": "bullish", "triggered": True})
+            signals.append({"name": "KD 低檔黃金交叉（K<30）", "type": "bullish", "triggered": True, "code": "kd_golden_low", "params": {}})
         if kd_cross_dn and last["kd_k"] > 70:
-            signals.append({"name": "KD 高檔死亡交叉（K>70）", "type": "bearish", "triggered": True})
+            signals.append({"name": "KD 高檔死亡交叉（K>70）", "type": "bearish", "triggered": True, "code": "kd_death_high", "params": {}})
 
     # MACD 柱狀圖由負轉正
     if "macd_hist" in df.columns:
         if prev["macd_hist"] < 0 and last["macd_hist"] >= 0:
-            signals.append({"name": "MACD 柱狀圖轉正", "type": "bullish", "triggered": True})
+            signals.append({"name": "MACD 柱狀圖轉正", "type": "bullish", "triggered": True, "code": "macd_hist_pos", "params": {}})
         if prev["macd_hist"] > 0 and last["macd_hist"] <= 0:
-            signals.append({"name": "MACD 柱狀圖轉負", "type": "bearish", "triggered": True})
+            signals.append({"name": "MACD 柱狀圖轉負", "type": "bearish", "triggered": True, "code": "macd_hist_neg", "params": {}})
 
     # RSI 超買超賣
     if "rsi" in df.columns:
         if last["rsi"] > 70:
-            signals.append({"name": f"RSI 超買（{last['rsi']:.1f}）", "type": "bearish", "triggered": True})
+            signals.append({"name": f"RSI 超買（{last['rsi']:.1f}）", "type": "bearish", "triggered": True, "code": "rsi_overbought", "params": {"val": round(float(last['rsi']), 1)}})
         elif last["rsi"] < 30:
-            signals.append({"name": f"RSI 超賣（{last['rsi']:.1f}）", "type": "bullish", "triggered": True})
+            signals.append({"name": f"RSI 超賣（{last['rsi']:.1f}）", "type": "bullish", "triggered": True, "code": "rsi_oversold", "params": {"val": round(float(last['rsi']), 1)}})
 
     # RSI 背離（價格創新高但 RSI 未創新高，取近20根）
     if "rsi" in df.columns and len(df) >= 20:
@@ -124,7 +124,7 @@ def detect_signals(df: pd.DataFrame, timeframe: str = "daily") -> list[dict]:
         price_new_high = last["close"] >= recent["close"].max()
         rsi_not_new_high = last["rsi"] < recent["rsi"].max() - 5
         if price_new_high and rsi_not_new_high:
-            signals.append({"name": "RSI 頂背離（價格新高但RSI未創高）", "type": "bearish", "triggered": True})
+            signals.append({"name": "RSI 頂背離（價格新高但RSI未創高）", "type": "bearish", "triggered": True, "code": "rsi_bear_div", "params": {}})
 
     # 布林通道收縮後突破
     if "bb_width" in df.columns and len(df) >= 20:
@@ -134,7 +134,7 @@ def detect_signals(df: pd.DataFrame, timeframe: str = "daily") -> list[dict]:
             squeeze_before = recent_width.iloc[-5:-1].min() <= recent_width.quantile(0.2)
             if squeeze_before:
                 direction = "bullish" if last["close"] > last["bb_mid"] else "bearish"
-                signals.append({"name": "布林通道收縮後突破", "type": direction, "triggered": True})
+                signals.append({"name": "布林通道收縮後突破", "type": direction, "triggered": True, "code": "bb_squeeze_break", "params": {}})
 
     # 均線糾結噴出：MA5/10/20/60 四線緊密交錯，底部平台撐著，今日收盤突破站上全線
     ma_cols_tangle = ["ma5", "ma10", "ma20", "ma60"] if timeframe == "daily" else ["ma5", "ma10", "ma20", "ma52"]

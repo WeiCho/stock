@@ -301,7 +301,21 @@
     "support_label": "支撐",
     "resistance_label": "壓力",
     "rationale_heading": "研判依據",
-    "no_signals": "無明顯訊號"
+    "no_signals": "無明顯訊號",
+    "factor": {
+      "trend_bullish": "日K 均線多頭排列",
+      "trend_bearish": "日K 均線空頭排列",
+      "rsi_hot": "RSI {{val}} 過熱（追高風險）",
+      "rsi_cold": "RSI {{val}} 過冷（超跌）",
+      "macd_hist_pos": "MACD 柱狀圖為正",
+      "macd_hist_neg": "MACD 柱狀圖為負",
+      "foreign_buy_streak": "外資連買 {{days}} 日",
+      "foreign_sell_streak": "外資連賣 {{days}} 日",
+      "trust_buy_streak": "投信連買 {{days}} 日",
+      "trust_sell_streak": "投信連賣 {{days}} 日",
+      "backtest_winrate": "{{signal}}：歷史20日勝率 {{wr}}%"
+    },
+    "disclaimer": "本研判綜合技術面、籌碼面與歷史回測統計，僅供研究參考，非投資建議；歷史統計不代表未來績效，且未計入交易成本。"
   },
   "backtest": {
     "fallback_signal": {
@@ -319,7 +333,17 @@
     "col_max_loss": "最大虧損",
     "hold_days_unit": "日",
     "recent_triggers": "最近觸發：",
-    "date_separator": "、"
+    "date_separator": "、",
+    "signal": {
+      "ma_cross": "MA20×MA60 黃金交叉",
+      "ma_death": "MA20×MA60 死亡交叉",
+      "kd_low_cross": "KD 低檔黃金交叉",
+      "kd_high_cross": "KD 高檔死亡交叉",
+      "macd_turn_pos": "MACD 柱狀圖轉正",
+      "macd_turn_neg": "MACD 柱狀圖轉負",
+      "rsi_oversold": "RSI 超賣",
+      "rsi_overbought": "RSI 超買"
+    }
   },
   "global": {
     "title": "全球盤勢 · 地緣動態",
@@ -391,6 +415,22 @@
       "bearish": "空頭排列",
       "consolidating": "整理中",
       "insufficient": "資料不足"
+    },
+    "tf": {
+      "daily": "日",
+      "weekly": "週"
+    },
+    "signal": {
+      "ma_golden": "{{tf}}K 黃金交叉",
+      "ma_death": "{{tf}}K 死亡交叉",
+      "kd_golden_low": "KD 低檔黃金交叉（K<30）",
+      "kd_death_high": "KD 高檔死亡交叉（K>70）",
+      "macd_hist_pos": "MACD 柱狀圖轉正",
+      "macd_hist_neg": "MACD 柱狀圖轉負",
+      "rsi_overbought": "RSI 超買（{{val}}）",
+      "rsi_oversold": "RSI 超賣（{{val}}）",
+      "rsi_bear_div": "RSI 頂背離（價格新高但 RSI 未創高）",
+      "bb_squeeze_break": "布林通道收縮後突破"
     }
   },
   "news": {

@@ -43,46 +43,50 @@ def analyze(symbol: str) -> dict:
 
     factors: list[dict] = []
 
-    def add(label: str, weight: int):
-        factors.append({"label": label, "weight": weight})
+    def add(label: str, weight: int, key: str | None = None, params: dict | None = None):
+        # label 為中文 fallback；key + params 給前端 i18n（t(key, params)）
+        factors.append({"label": label, "weight": weight, "labelKey": key, "params": params or {}})
 
     # ── 趨勢（均線排列）──
     trend = tech.get("trend")
     if trend == "多頭排列":
-        add("日K 均線多頭排列", 2)
+        add("日K 均線多頭排列", 2, "outlook.factor.trend_bullish")
     elif trend == "空頭排列":
-        add("日K 均線空頭排列", -2)
+        add("日K 均線空頭排列", -2, "outlook.factor.trend_bearish")
 
-    # ── 技術形態訊號 ──
+    # ── 技術形態訊號 ──（沿用 technical.signal.* 的 key + params）
     signal_names = [s["name"] for s in tech.get("signals", [])]
     for s in tech.get("signals", []):
-        add(s["name"], 1 if s["type"] == "bullish" else -1)
+        code = s.get("code")
+        add(s["name"], 1 if s["type"] == "bullish" else -1,
+            f"technical.signal.{code}" if code else None, s.get("params"))
 
     # ── RSI 過熱/過冷 ──
     rsi = tech.get("rsi")
     if rsi is not None:
         if rsi >= 80:
-            add(f"RSI {rsi} 過熱（追高風險）", -1)
+            add(f"RSI {rsi} 過熱（追高風險）", -1, "outlook.factor.rsi_hot", {"val": rsi})
         elif rsi <= 20:
-            add(f"RSI {rsi} 過冷（超跌）", 1)
+            add(f"RSI {rsi} 過冷（超跌）", 1, "outlook.factor.rsi_cold", {"val": rsi})
 
     # ── MACD 柱狀圖方向 ──
     hist = (tech.get("macd") or {}).get("hist")
     if hist is not None:
-        add("MACD 柱狀圖為正" if hist > 0 else "MACD 柱狀圖為負", 1 if hist > 0 else -1)
+        add("MACD 柱狀圖為正" if hist > 0 else "MACD 柱狀圖為負", 1 if hist > 0 else -1,
+            "outlook.factor.macd_hist_pos" if hist > 0 else "outlook.factor.macd_hist_neg")
 
     # ── 籌碼：外資 / 投信連買賣 ──
     if "error" not in chip_data:
         fc = chip_data.get("foreign", {}).get("consecutive_days", 0)
         if fc >= 3:
-            add(f"外資連買 {fc} 日", 2)
+            add(f"外資連買 {fc} 日", 2, "outlook.factor.foreign_buy_streak", {"days": fc})
         elif fc <= -3:
-            add(f"外資連賣 {abs(fc)} 日", -2)
+            add(f"外資連賣 {abs(fc)} 日", -2, "outlook.factor.foreign_sell_streak", {"days": abs(fc)})
         tc = chip_data.get("trust", {}).get("consecutive_days", 0)
         if tc >= 3:
-            add(f"投信連買 {tc} 日", 1)
+            add(f"投信連買 {tc} 日", 1, "outlook.factor.trust_buy_streak", {"days": tc})
         elif tc <= -3:
-            add(f"投信連賣 {abs(tc)} 日", -1)
+            add(f"投信連賣 {abs(tc)} 日", -1, "outlook.factor.trust_sell_streak", {"days": abs(tc)})
 
     # ── 歷史回測：取目前最強的有效形態，引用其 20 日勝率/報酬作為預期 ──
     expected = None
@@ -93,11 +97,14 @@ def analyze(symbol: str) -> dict:
         if stat20 and close:
             wr, avg = stat20["win_rate"], stat20["avg_return"]
             if wr >= 55 and avg > 0:
-                add(f"{r['signal_name']}：歷史20日勝率 {wr}%", 2)
+                add(f"{r['signal_name']}：歷史20日勝率 {wr}%", 2,
+                    "outlook.factor.backtest_winrate", {"code": bt_code, "wr": wr})
             elif wr <= 45 or avg < 0:
-                add(f"{r['signal_name']}：歷史20日勝率 {wr}%", -1)
+                add(f"{r['signal_name']}：歷史20日勝率 {wr}%", -1,
+                    "outlook.factor.backtest_winrate", {"code": bt_code, "wr": wr})
             expected = {
                 "basis": r["signal_name"],
+                "basis_code": bt_code,
                 "horizon_days": 20,
                 "win_rate": wr,
                 "avg_return": avg,

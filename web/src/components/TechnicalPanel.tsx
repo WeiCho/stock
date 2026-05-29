@@ -8,9 +8,9 @@ const TREND_KEY: Record<string, string> = {
   '資料不足': 'technical.trend.insufficient',
 }
 
-function Badge({ type, name }: TechnicalSignal) {
+function Badge({ type, label }: { type: string; label: string }) {
   const color = type === 'bullish' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
-  return <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>{name}</span>
+  return <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>{label}</span>
 }
 
 function Row({ label, value, sub }:
@@ -34,12 +34,20 @@ export default function TechnicalPanel({ data }: { data: TechnicalResponse | nul
   const trendColor = trend === '多頭排列' ? 'text-red-400' : trend === '空頭排列' ? 'text-green-400' : 'text-yellow-400'
   const trendLabel = trend != null && TREND_KEY[trend] ? t(TREND_KEY[trend]) : trend
 
+  // signal.name 是後端中文 fallback；有 code 時走 i18n（tf 參數先翻成 日/週·Daily/Weekly）
+  const signalLabel = (s: TechnicalSignal) => {
+    if (!s.code) return s.name
+    const p: Record<string, string | number> = { ...(s.params || {}) }
+    if (typeof p.tf === 'string') p.tf = t('technical.tf.' + p.tf)
+    return t('technical.signal.' + s.code, p)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-2xl font-bold text-slate-100">{close}</span>
         <span className={`text-sm font-medium ${trendColor}`}>{trendLabel}</span>
-        {signals?.map((s, i) => <Badge key={i} {...s} />)}
+        {signals?.map((s, i) => <Badge key={i} type={s.type} label={signalLabel(s)} />)}
       </div>
 
       <div className="grid grid-cols-2 gap-4">

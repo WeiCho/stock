@@ -301,7 +301,21 @@
     "support_label": "Support",
     "resistance_label": "Resistance",
     "rationale_heading": "Rationale",
-    "no_signals": "No clear signal"
+    "no_signals": "No clear signal",
+    "factor": {
+      "trend_bullish": "Daily MA bullish alignment",
+      "trend_bearish": "Daily MA bearish alignment",
+      "rsi_hot": "RSI {{val}} overheated (chase risk)",
+      "rsi_cold": "RSI {{val}} oversold (deep dip)",
+      "macd_hist_pos": "MACD histogram positive",
+      "macd_hist_neg": "MACD histogram negative",
+      "foreign_buy_streak": "Foreign net buy {{days}}d streak",
+      "foreign_sell_streak": "Foreign net sell {{days}}d streak",
+      "trust_buy_streak": "Trust net buy {{days}}d streak",
+      "trust_sell_streak": "Trust net sell {{days}}d streak",
+      "backtest_winrate": "{{signal}}: 20D historical win rate {{wr}}%"
+    },
+    "disclaimer": "This outlook combines technical, institutional-flow, and 10-year backtest statistics for research reference only — not investment advice. Past statistics do not guarantee future results and exclude transaction costs."
   },
   "backtest": {
     "fallback_signal": {
@@ -319,7 +333,17 @@
     "col_max_loss": "Max loss",
     "hold_days_unit": "D",
     "recent_triggers": "Recent triggers: ",
-    "date_separator": ", "
+    "date_separator": ", ",
+    "signal": {
+      "ma_cross": "MA20×MA60 Golden Cross",
+      "ma_death": "MA20×MA60 Death Cross",
+      "kd_low_cross": "KD Low Golden Cross",
+      "kd_high_cross": "KD High Death Cross",
+      "macd_turn_pos": "MACD Turned Positive",
+      "macd_turn_neg": "MACD Turned Negative",
+      "rsi_oversold": "RSI Oversold",
+      "rsi_overbought": "RSI Overbought"
+    }
   },
   "global": {
     "title": "Global Markets · Geopolitics",
@@ -391,6 +415,22 @@
       "bearish": "Bearish Alignment",
       "consolidating": "Consolidating",
       "insufficient": "Insufficient Data"
+    },
+    "tf": {
+      "daily": "Daily",
+      "weekly": "Weekly"
+    },
+    "signal": {
+      "ma_golden": "{{tf}} MA Golden Cross",
+      "ma_death": "{{tf}} MA Death Cross",
+      "kd_golden_low": "KD Golden Cross (low, K<30)",
+      "kd_death_high": "KD Death Cross (high, K>70)",
+      "macd_hist_pos": "MACD Histogram Turned Positive",
+      "macd_hist_neg": "MACD Histogram Turned Negative",
+      "rsi_overbought": "RSI Overbought ({{val}})",
+      "rsi_oversold": "RSI Oversold ({{val}})",
+      "rsi_bear_div": "RSI Bearish Divergence (price high, RSI lower)",
+      "bb_squeeze_break": "Bollinger Squeeze Breakout"
     }
   },
   "news": {
