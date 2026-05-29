@@ -1,0 +1,52 @@
+{
+  "nav": {
+    "title": "TW Stock",
+    "market": "Market",
+    "global": "Global",
+    "futures": "Futures",
+    "macro": "Macro",
+    "compare": "Compare",
+    "watchlist": "Watchlist",
+    "search_placeholder": "Ticker or name, e.g. 2330 / AAPL / Apple",
+    "search_button": "Search"
+  },
+  "market_label": {
+    "twse": "TWSE",
+    "tpex": "TPEx",
+    "us": "US"
+  },
+  "tabs": {
+    "outlook": "Outlook",
+    "technical": "Technical",
+    "chip": "Inst. Flow",
+    "backtest": "Backtest",
+    "fundamentals": "Fundamentals",
+    "news": "News"
+  },
+  "card": {
+    "market_overview": "Market Overview",
+    "kline": "Price Chart",
+    "futures_commodities": "Futures / Commodities"
+  },
+  "kline_tf": {
+    "intraday": "Today",
+    "1d": "1D",
+    "3d": "3D",
+    "5d": "5D",
+    "1w": "1W",
+    "3w": "3W",
+    "1mo": "1M"
+  },
+  "common": {
+    "loading": "Loading…",
+    "no_data": "No data",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "updating": "Updating…",
+    "remove": "Remove",
+    "add": "Add",
+    "error_prefix": "Component error",
+    "lang_switch": "中",
+    "stock_view_hint": "Enter a ticker to start"
+  }
+}

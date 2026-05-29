@@ -45,4 +45,49 @@ export const api = {
     get<{ available: boolean; indicators: { series_id: string; label: string; unit: string; note?: string; latest_date: string; latest_value: number; mom_change_pct?: number | null; yoy_change_pct?: number | null }[] }>('/market/macro/economic'),
   macroSeries: (id: string, years = 3) =>
     get<{ series_id: string; label: string; unit: string; freq: string; note?: string; data: { date: string; value: number }[] }>(`/market/macro/series/${id}`, { years }),
+  // 台股進階基本面 + 籌碼
+  monthlyRevenue: (sym: string, months = 24) =>
+    get<{
+      symbol: string
+      data: { year: number; month: number; date: string; revenue: number; revenue_億: number; mom_pct: number | null; yoy_pct: number | null }[]
+      latest?: { year: number; month: number; revenue_億: number; mom_pct: number | null; yoy_pct: number | null; note: string }
+    }>(`/stock/${sym}/monthly-revenue`, { months }),
+  foreignHolding: (sym: string, weeks = 26) =>
+    get<{
+      symbol: string
+      data: { date: string; foreign_ratio: number | null; foreign_remain_ratio: number | null }[]
+      latest?: { date: string; foreign_ratio: number | null; change_4w_pp?: number; note?: string }
+    }>(`/stock/${sym}/foreign-holding`, { weeks }),
+  marginShort: (sym: string, days = 30) =>
+    get<{
+      symbol: string
+      data: { date: string; margin_balance: number; margin_change: number; short_balance: number; short_change: number }[]
+      latest?: { date: string; margin_balance: number; margin_change: number; short_balance: number; short_change: number }
+    }>(`/stock/${sym}/margin-short`, { days }),
+  securitiesLending: (sym: string, days = 30) =>
+    get<{
+      symbol: string
+      data: { date: string; volume: number; avg_fee_rate: number }[]
+      latest?: { date: string; volume: number; avg_fee_rate: number }
+    }>(`/stock/${sym}/securities-lending`, { days }),
+  yieldCurve: (years = 5) =>
+    get<{ data: { date: string; value: number }[]; latest: number | null; status: 'normal' | 'flat' | 'inverted' | 'unavailable'; note: string }>('/market/macro/yield-curve', { years }),
+  futuresPcr: (days = 30) =>
+    get<{
+      data: { date: string; pcr_volume: number | null; pcr_oi: number | null; call_volume: number; put_volume: number }[]
+      latest: { date: string; pcr_volume: number | null; pcr_oi: number | null; volume_category?: string; note?: string } | null
+      error?: string
+    }>('/market/futures/pcr', { days }),
+  // Finnhub — 經濟事件 / 個股財報 / 分析師評等
+  macroCalendar: (daysAhead = 30, minImpact = 'high') =>
+    get<{
+      available: boolean
+      events?: { date: string; time: string; country: string; event: string; impact: string; prev?: number | null; estimate?: number | null; actual?: number | null; unit?: string }[]
+      count?: number
+      note?: string
+    }>('/market/macro/calendar', { days_ahead: daysAhead, min_impact: minImpact }),
+  stockEarnings: (sym: string) =>
+    get<{ available: boolean; symbol?: string; earnings?: { date: string; epsActual?: number; epsEstimate?: number; revenueActual?: number; revenueEstimate?: number }[] }>(`/stock/${sym}/earnings`),
+  stockRecommendations: (sym: string) =>
+    get<{ available: boolean; symbol?: string; recommendations?: { period: string; buy: number; hold: number; sell: number; strongBuy: number; strongSell: number }[] }>(`/stock/${sym}/recommendations`),
 }

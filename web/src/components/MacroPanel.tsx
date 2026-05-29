@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Bar } from '../types'
 
+interface YieldCurve { latest: number | null; status: 'normal' | 'flat' | 'inverted' | 'unavailable'; note: string }
+interface Pcr { latest: { date: string; pcr_volume: number | null; pcr_oi: number | null; note?: string; volume_category?: string } | null; error?: string }
+interface CalEvent { date: string; time: string; country: string; event: string; impact: string; prev?: number | null; estimate?: number | null; actual?: number | null; unit?: string }
+interface CalResp { available: boolean; events?: CalEvent[]; count?: number }
+
 /**
  * 總體經濟（Macro）面板：5 層分析框架
  *   1. 總體經濟（Macro）  — 利率、DXY、通膨、GDP、就業
@@ -105,8 +110,11 @@ export default function MacroPanel({ onJumpGlobal }: { onJumpGlobal?: () => void
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<Record<string, CommodityResp>>({})
   const [fred, setFred] = useState<FredSummary>({ available: false, indicators: [] })
+  const [yc, setYc] = useState<YieldCurve | null>(null)
+  const [pcr, setPcr] = useState<Pcr | null>(null)
+  const [cal, setCal] = useState<CalResp | null>(null)
 
-  // 一次抓全部需要的標的，並行（Yahoo 商品 + FRED 經濟指標）
+  // 一次抓全部需要的標的，並行（Yahoo 商品 + FRED + 殖利率 + PCR + Finnhub 經濟事件）
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -114,12 +122,18 @@ export default function MacroPanel({ onJumpGlobal }: { onJumpGlobal?: () => void
     Promise.all([
       Promise.all(symbols.map(s => fetchSym(s, 365).then(r => [s, r] as const))),
       fetchFredSummary(),
-    ]).then(([yahoo, fredResp]) => {
+      api.yieldCurve(5).catch(() => null),
+      api.futuresPcr(30).catch(() => null),
+      api.macroCalendar(30, 'high').catch(() => null),
+    ]).then(([yahoo, fredResp, ycResp, pcrResp, calResp]) => {
       if (cancelled) return
       const out: Record<string, CommodityResp> = {}
       for (const [s, r] of yahoo) if (r) out[s] = r
       setItems(out)
       setFred(fredResp)
+      setYc(ycResp)
+      setPcr(pcrResp)
+      setCal(calResp)
       setLoading(false)
     })
     return () => { cancelled = true }
@@ -275,22 +289,55 @@ export default function MacroPanel({ onJumpGlobal }: { onJumpGlobal?: () => void
       {/* ───── 4. 籌碼 / 情緒 ───── */}
       <section>
         <h3 className="text-sm font-semibold text-amber-300 mb-2">📈 4. 籌碼 / 情緒</h3>
-        <div className="bg-slate-800/40 rounded-lg p-3 text-xs space-y-1">
-          <p className="text-slate-400">
-            <b>VIX</b>
-            <span className="font-mono text-slate-100 mx-1">
-              {get('VIX')?.last?.toFixed(2) ?? '—'}
-            </span>
-            <span className="text-slate-500">
-              {(get('VIX')?.last ?? 0) > 30 && '· 高度恐慌 → 防禦'}
-              {(get('VIX')?.last ?? 0) > 20 && (get('VIX')?.last ?? 0) <= 30 && '· 警戒'}
-              {(get('VIX')?.last ?? 0) <= 20 && (get('VIX')?.last ?? 0) > 0 && '· 平靜（風險偏好）'}
-            </span>
-          </p>
-          <p className="text-slate-500">
-            ETF 資金流向、央行買金需要付費 API；目前以 VIX + 大盤 % 變化做粗略推估。
-          </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {/* VIX */}
+          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+            <p className="text-xs text-slate-500 mb-1">VIX 恐慌指數</p>
+            <p className="text-lg font-bold font-mono text-slate-100">{get('VIX')?.last?.toFixed(2) ?? '—'}</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              {(get('VIX')?.last ?? 0) > 30 && '🔴 高度恐慌 → 防禦'}
+              {(get('VIX')?.last ?? 0) > 20 && (get('VIX')?.last ?? 0) <= 30 && '🟡 警戒'}
+              {(get('VIX')?.last ?? 0) <= 20 && (get('VIX')?.last ?? 0) > 0 && '🟢 平靜（風險偏好）'}
+            </p>
+          </div>
+
+          {/* 殖利率曲線 10Y-2Y */}
+          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+            <p className="text-xs text-slate-500 mb-1">10Y - 2Y 殖利率利差</p>
+            <p className={`text-lg font-bold font-mono ${
+              yc?.status === 'inverted' ? 'text-red-400'
+              : yc?.status === 'flat' ? 'text-amber-400'
+              : yc?.status === 'normal' ? 'text-green-400'
+              : 'text-slate-500'
+            }`}>
+              {yc?.latest != null ? `${yc.latest >= 0 ? '+' : ''}${yc.latest.toFixed(2)}%` : '—'}
+            </p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{yc?.note ?? '需 FRED API'}</p>
+          </div>
+
+          {/* 台指選擇權 PCR */}
+          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+            <p className="text-xs text-slate-500 mb-1">台指期選擇權 PCR</p>
+            <p className={`text-lg font-bold font-mono ${
+              pcr?.latest?.volume_category?.includes('bearish') ? 'text-green-400'
+              : pcr?.latest?.volume_category?.includes('bullish') ? 'text-red-400'
+              : 'text-slate-100'
+            }`}>
+              {pcr?.latest?.pcr_volume?.toFixed(2) ?? '—'}
+              <span className="text-[10px] text-slate-600 ml-1">vol</span>
+              {pcr?.latest?.pcr_oi != null && (
+                <span className="text-sm text-slate-400 font-mono ml-2">
+                  {pcr.latest.pcr_oi.toFixed(2)}<span className="text-[10px] text-slate-600 ml-1">oi</span>
+                </span>
+              )}
+            </p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{pcr?.latest?.note ?? '— TXO PCR'}</p>
+          </div>
         </div>
+        <p className="text-[10px] text-slate-600 mt-2">
+          PCR &gt; 1.2 通常代表「過度恐慌」（反向買入訊號）；&lt; 0.7「過度樂觀」（反向警戒）。
+          殖利率倒掛在歷史上 6-18 個月內常出現衰退。
+        </p>
       </section>
 
       {/* ───── 5. 地緣政治 ───── */}
@@ -303,6 +350,67 @@ export default function MacroPanel({ onJumpGlobal }: { onJumpGlobal?: () => void
             前往「全球」頁查最新新聞 →
           </button>
         </div>
+      </section>
+
+      {/* ───── 6. 經濟事件日曆 ───── */}
+      <section>
+        <h3 className="text-sm font-semibold text-amber-300 mb-2">
+          📅 6. 未來 30 天經濟事件 · Calendar
+          {cal?.count != null && <span className="text-xs text-slate-500 font-normal ml-2">{cal.count} 筆</span>}
+        </h3>
+        {!cal?.available && (
+          <div className="bg-slate-800/30 border border-dashed border-slate-700 rounded-lg p-3 text-xs text-center">
+            <p className="text-slate-500">需設定 <code className="text-amber-400">FINNHUB_API_KEY</code></p>
+            <a href="https://finnhub.io/dashboard" target="_blank" rel="noreferrer"
+              className="text-[10px] text-blue-400 underline">免費申請 →</a>
+          </div>
+        )}
+        {cal?.available && cal.events && cal.events.length > 0 && (
+          <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-800/60">
+                <tr className="text-slate-500 text-[10px] uppercase">
+                  <th className="text-left py-1.5 px-2">日期 / 時間</th>
+                  <th className="text-left px-2">國家</th>
+                  <th className="text-left px-2">事件</th>
+                  <th className="text-right px-2">前值</th>
+                  <th className="text-right px-2">預期</th>
+                  <th className="text-right px-2">公布</th>
+                  <th className="text-center px-2">影響</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cal.events.slice(0, 30).map((e, i) => {
+                  const impactEmoji = e.impact === 'high' ? '🔴' : e.impact === 'medium' ? '🟡' : '⚪'
+                  const fmtNum = (v?: number | null) => v == null ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                  return (
+                    <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                      <td className="py-1 px-2 text-slate-400 whitespace-nowrap">
+                        {e.date}<span className="text-slate-600 ml-1">{e.time}</span>
+                      </td>
+                      <td className="px-2 font-mono text-blue-300">{e.country}</td>
+                      <td className="px-2 text-slate-300">{e.event}</td>
+                      <td className="px-2 text-right font-mono text-slate-500">{fmtNum(e.prev)}</td>
+                      <td className="px-2 text-right font-mono text-amber-300">{fmtNum(e.estimate)}</td>
+                      <td className={`px-2 text-right font-mono ${e.actual != null ? 'text-slate-100 font-bold' : 'text-slate-700'}`}>
+                        {fmtNum(e.actual)}
+                      </td>
+                      <td className="px-2 text-center">{impactEmoji}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {cal.events.length > 30 && (
+              <p className="text-[10px] text-slate-600 text-center py-2">
+                顯示前 30 筆，共 {cal.events.length} 筆
+              </p>
+            )}
+          </div>
+        )}
+        <p className="text-[10px] text-slate-600 mt-2">
+          🔴 high / 🟡 medium / ⚪ low · 資料源 Finnhub · 已過濾掉德國各州、Prel 中間版本、節日噪音
+        </p>
       </section>
     </div>
   )

@@ -37,6 +37,8 @@ SERIES = {
     "PAYEMS":    {"label": "非農就業",         "unit": "千人",              "freq": "monthly",   "note": "勞動市場熱度"},
     "UNRATE":    {"label": "失業率",           "unit": "%",                 "freq": "monthly",   "note": "勞動市場（反向）"},
     "DFF":       {"label": "Fed Funds Rate",   "unit": "%",                 "freq": "daily",     "note": "Fed 政策利率"},
+    "DGS2":      {"label": "美 2Y 公債利率",   "unit": "%",                 "freq": "daily",     "note": "短端利率，反映 Fed 預期"},
+    "DGS10":     {"label": "美 10Y 公債利率",  "unit": "%",                 "freq": "daily",     "note": "長端利率，反映通膨/成長預期"},
 }
 
 # 1 小時 in-memory cache（FRED 月頻資料一天才更新一次，但加減快取省 quota）
@@ -116,6 +118,50 @@ def get_series(series_id: str, years: int = 3) -> dict:
     if data:
         _CACHE[cache_key] = (datetime.now(), result)
     return result
+
+
+# ──────────────────────────────────────────────
+# 衍生指標：殖利率曲線（10Y - 2Y spread）
+# ──────────────────────────────────────────────
+
+def yield_curve(years: int = 5) -> dict:
+    """美 10Y - 2Y 公債利差。倒掛（< 0）歷史上是衰退預警，平均提前 6-18 個月。
+    回傳 {data: [{date, value}], latest, status: 'normal'|'flat'|'inverted'}。"""
+    dgs10 = get_series("DGS10", years=years).get("data") or []
+    dgs2 = get_series("DGS2", years=years).get("data") or []
+    if not dgs10 or not dgs2:
+        return {"data": [], "latest": None, "status": "unavailable",
+                "note": "FRED 暫時無法取得；通常 1-2 分鐘內恢復"}
+
+    # 用日期做 inner join
+    m2 = {r["date"]: r["value"] for r in dgs2}
+    spread = []
+    for r in dgs10:
+        v2 = m2.get(r["date"])
+        if v2 is not None:
+            spread.append({"date": r["date"], "value": round(r["value"] - v2, 3)})
+
+    latest = spread[-1]["value"] if spread else None
+    if latest is None:
+        status = "unavailable"
+    elif latest < -0.1:
+        status = "inverted"   # 倒掛 — 強烈衰退訊號
+    elif latest < 0.3:
+        status = "flat"       # 趨平 — 警戒
+    else:
+        status = "normal"
+
+    return {
+        "data": spread,
+        "latest": latest,
+        "status": status,
+        "note": {
+            "inverted": "⚠ 殖利率倒掛：歷史上 6-18 個月內常出現衰退",
+            "flat": "曲線趨平：景氣動能放緩警戒",
+            "normal": "正常曲線：景氣擴張階段",
+            "unavailable": "資料暫時無法取得",
+        }[status],
+    }
 
 
 def _change_pct(curr: float, base: float) -> Optional[float]:

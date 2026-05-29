@@ -8,6 +8,7 @@ import time as _time
 import pandas as pd
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select, func
 
 # 路由用到的模組統一在頂層 import — 之前散在每個 route handler 裡面，
@@ -15,12 +16,16 @@ from sqlalchemy import select, func
 import backtest as bt
 import chip as chip_module
 import commodities
+import finnhub
 import fred
 import fugle
+import fundamentals_extra
 import news_fundamental as nf
 import outlook
 import pine_exporter
+import taifex
 import technical
+import watchlist
 from db import (
     IndexData, Institutional, StockName, StockIndustry,
     get_session, init_db,
@@ -79,6 +84,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# gzip 壓縮：> 500 bytes 的 response 自動壓縮（K 線 / 法人歷史等大資料減 70-80% 體積）
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 # ──────────────────────────────────────────────
@@ -520,6 +527,125 @@ def macro_series(series_id: str, years: int = 3):
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@app.get("/market/macro/yield-curve")
+def macro_yield_curve(years: int = 5):
+    """美 10Y - 2Y 殖利率利差。倒掛 = 衰退預警。需 FRED_API_KEY。"""
+    return fred.yield_curve(years=years)
+
+
+@app.get("/market/futures/pcr")
+def futures_pcr(days: int = 30):
+    """台指選擇權 Put/Call Ratio（成交量比 + 未平倉比）。資料源 FinMind。"""
+    return taifex.fetch_pcr(days=days)
+
+
+@app.get("/market/macro/calendar")
+def macro_calendar(days_ahead: int = 30, min_impact: str = "medium"):
+    """未來 N 天全球經濟事件日曆（FOMC / CPI / NFP / 央行決策等）。
+    min_impact: low / medium / high。資料源 Finnhub，需 FINNHUB_API_KEY。"""
+    return finnhub.economic_calendar(days_ahead=days_ahead, min_impact=min_impact)
+
+
+@app.get("/stock/{symbol}/earnings")
+def stock_earnings(symbol: str, days_back: int = 90, days_ahead: int = 90):
+    """個股財報日曆（主要美股）。需 FINNHUB_API_KEY。"""
+    return finnhub.earnings_calendar(symbol, days_back=days_back, days_ahead=days_ahead)
+
+
+@app.get("/stock/{symbol}/recommendations")
+def stock_recommendations(symbol: str):
+    """個股分析師評等趨勢（主要美股）。需 FINNHUB_API_KEY。"""
+    return finnhub.recommendations(symbol)
+
+
+@app.get("/stock/{symbol}/monthly-revenue")
+def stock_monthly_revenue(symbol: str, months: int = 24):
+    """月營收（MOPS）+ MoM/YoY。每月 10 號公布上月。"""
+    return fundamentals_extra.monthly_revenue(symbol, months_back=months)
+
+
+@app.get("/stock/{symbol}/foreign-holding")
+def stock_foreign_holding(symbol: str, weeks: int = 26):
+    """外資持股比率（集保，週頻）+ 4 週變化。"""
+    return fundamentals_extra.foreign_shareholding(symbol, weeks_back=weeks)
+
+
+@app.get("/stock/{symbol}/margin-short")
+def stock_margin_short(symbol: str, days: int = 30):
+    """融資融券餘額（每日）。融資=散戶借錢買；融券=散戶放空。"""
+    return fundamentals_extra.margin_short(symbol, days_back=days)
+
+
+@app.get("/stock/{symbol}/securities-lending")
+def stock_securities_lending(symbol: str, days: int = 30):
+    """借券賣出餘額（每日，外資放空主要管道）。"""
+    return fundamentals_extra.securities_lending(symbol, days_back=days)
+
+
+# ──────────────────────────────────────────────
+# Watchlist + 條件記錄
+# ──────────────────────────────────────────────
+
+from pydantic import BaseModel  # noqa: E402
+
+
+class WatchlistItem(BaseModel):
+    symbol: str
+    note: str | None = None
+
+
+class ConditionItem(BaseModel):
+    symbol: str
+    indicator: str  # rsi / kd_k / kd_d / macd_hist / close
+    op: str         # lt / gt
+    threshold: float
+
+
+@app.get("/watchlist")
+def watchlist_list():
+    """關注清單。"""
+    return {"items": watchlist.list_watchlist()}
+
+
+@app.post("/watchlist")
+def watchlist_add(payload: WatchlistItem):
+    """加入 symbol 到關注清單。"""
+    return watchlist.add_watchlist(payload.symbol, payload.note)
+
+
+@app.delete("/watchlist/{symbol}")
+def watchlist_remove(symbol: str):
+    """從關注清單移除（連同所有條件）。"""
+    return watchlist.remove_watchlist(symbol)
+
+
+@app.get("/watchlist/conditions")
+def watchlist_conditions(symbol: str | None = None):
+    """列條件（指定 symbol 則只回該股）。"""
+    return {"items": watchlist.list_conditions(symbol)}
+
+
+@app.post("/watchlist/conditions")
+def watchlist_add_condition(payload: ConditionItem):
+    """新增條件。indicator: rsi/kd_k/kd_d/macd_hist/close；op: lt/gt"""
+    result = watchlist.add_condition(payload.symbol, payload.indicator, payload.op, payload.threshold)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.delete("/watchlist/conditions/{cid}")
+def watchlist_remove_condition(cid: int):
+    """刪條件。"""
+    return watchlist.remove_condition(cid)
+
+
+@app.get("/watchlist/status")
+def watchlist_status():
+    """評估所有啟用條件，回每條的目前值 + 是否觸發。"""
+    return watchlist.evaluate_all()
 
 
 @app.get("/stock/search")

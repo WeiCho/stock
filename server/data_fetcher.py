@@ -780,10 +780,15 @@ def get_institutional_df(symbol: str, days: int = 60) -> pd.DataFrame:
 def ensure_stock_data(symbol: str) -> bool:
     """
     確保個股資料存在；若尚未下載則觸發歷史資料抓取。
-    優先用 FinMind 單一請求抓完整段歷史（最快，約 1 秒）；失敗或被限流時，
-    再依股票清單的市場別逐月爬 TWSE/TPEx（上櫃 4 碼股票也能正確下載）。
+
+    分派：
+    - 美股 ticker（純字母 1-5 字）→ Yahoo Finance（us_stocks 模組）
+    - 其他（含數字的台股代碼）→ FinMind 主力 / TWSE·TPEx 備援
+
     回傳 True 表示資料就緒。
     """
+    import us_stocks  # 避免循環 import
+
     with get_session() as session:
         has_data = session.execute(
             select(DailyPrice.id).where(DailyPrice.symbol == symbol).limit(1)
@@ -791,6 +796,15 @@ def ensure_stock_data(symbol: str) -> bool:
 
     if has_data:
         return True
+
+    # ── 美股分支 ──
+    if us_stocks.is_us_stock(symbol):
+        log.info("首次查詢美股 %s，從 Yahoo Finance 下載…", symbol)
+        n = us_stocks.ensure_us_stock_data(symbol.upper(), years=10)
+        if n > 0:
+            log.info("%s Yahoo 下載完成：%d 筆", symbol, n)
+            return True
+        return False
 
     log.info("首次查詢 %s，開始下載 10 年歷史…", symbol)
     # 1) 首選 FinMind（單一請求，免逐月爬 ~120 次）
@@ -943,7 +957,9 @@ def get_industry_map() -> dict:
 def search_stock(query: str, limit: int = 10) -> list[dict]:
     """
     用代碼或中文名稱模糊搜尋股票，回傳 [{symbol, name, market}]。
+    純字母 query → 同時去 Finnhub 搜美股代碼。
     """
+    import us_stocks  # 避免循環 import
     q = query.strip()
     with get_session() as session:
         if q.isdigit():
@@ -954,11 +970,26 @@ def search_stock(query: str, limit: int = 10) -> list[dict]:
                 .limit(limit)
             ).scalars().all()
         else:
-            # 以名稱長度排序，讓「元太」這類本尊排在「元太○○購01」等衍生商品之前
+            # 同時搜「名稱含 q」（中文公司名）或「代碼 startswith 大寫 q」（美股 ticker）
+            # 名稱長度排序：本尊優先，衍生商品在後
+            upper_q = q.upper()
             rows = session.execute(
                 select(StockName)
-                .where(StockName.name.like(f"%{q}%"))
+                .where(
+                    StockName.name.like(f"%{q}%")
+                    | StockName.symbol.like(f"{upper_q}%")
+                )
                 .order_by(func.length(StockName.name), StockName.symbol)
                 .limit(limit)
             ).scalars().all()
-    return [{"symbol": r.symbol, "name": r.name, "market": r.market} for r in rows]
+
+    tw_results = [{"symbol": r.symbol, "name": r.name, "market": r.market} for r in rows]
+
+    # 純字母 query 加美股 — 不取代台股結果，疊在後面
+    if q.isalpha() and len(q) <= 5:
+        us_results = us_stocks.search_us(q, limit=limit)
+        # 去重（萬一同代碼出現兩邊）
+        seen = {r["symbol"] for r in tw_results}
+        tw_results.extend(r for r in us_results if r["symbol"] not in seen)
+
+    return tw_results[:limit]

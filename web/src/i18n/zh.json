@@ -1,0 +1,52 @@
+{
+  "nav": {
+    "title": "台股分析",
+    "market": "大盤",
+    "global": "全球",
+    "futures": "期貨",
+    "macro": "總經",
+    "compare": "對比",
+    "watchlist": "關注",
+    "search_placeholder": "代碼或中文名稱，如 2330 / 台積電",
+    "search_button": "查詢"
+  },
+  "market_label": {
+    "twse": "上市",
+    "tpex": "上櫃",
+    "us": "美股"
+  },
+  "tabs": {
+    "outlook": "綜合研判",
+    "technical": "技術面",
+    "chip": "籌碼面",
+    "backtest": "回測",
+    "fundamentals": "基本面",
+    "news": "新聞"
+  },
+  "card": {
+    "market_overview": "大盤總覽",
+    "kline": "K 線圖",
+    "futures_commodities": "期貨 / 國際商品"
+  },
+  "kline_tf": {
+    "intraday": "當日",
+    "1d": "日K",
+    "3d": "3日",
+    "5d": "5日",
+    "1w": "週K",
+    "3w": "3週",
+    "1mo": "月K"
+  },
+  "common": {
+    "loading": "載入中…",
+    "no_data": "目前無資料",
+    "retry": "重試",
+    "refresh": "重新抓取",
+    "updating": "更新中…",
+    "remove": "移除",
+    "add": "加入",
+    "error_prefix": "元件發生錯誤",
+    "lang_switch": "EN",
+    "stock_view_hint": "輸入股票代碼開始分析"
+  }
+}

@@ -118,6 +118,34 @@ class StockIndustry(Base):
     industry = Column(String(40), nullable=False, index=True)
 
 
+class Watchlist(Base):
+    """用戶關注的股票清單。單機個人工具暫不分用戶。"""
+    __tablename__ = "watchlist"
+    __table_args__ = (UniqueConstraint("symbol"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    note = Column(Text)
+    added_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AlertCondition(Base):
+    """條件記錄：'2330 RSI < 30' 之類。
+    indicator: rsi / kd_k / kd_d / macd_hist / close / ma_cross
+    op: lt / gt / cross_up / cross_down
+    Evaluation 走 server side（GET /watchlist/status），目前不 push 通知。
+    未來 Go alert engine 接 SQLite 這張表直接消費。"""
+    __tablename__ = "alert_conditions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    indicator = Column(String(20), nullable=False)   # rsi / kd_k / kd_d / macd_hist / close
+    op = Column(String(10), nullable=False)          # lt / gt / cross_up / cross_down
+    threshold = Column(Float, nullable=False)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 def init_db():
     Base.metadata.create_all(engine)
 

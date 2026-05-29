@@ -8,14 +8,25 @@ import fred
 
 
 class TestSeriesRegistry:
-    def test_six_series_registered(self):
+    def test_eight_series_registered(self):
+        # 加入 DGS2 + DGS10（殖利率曲線用）後總共 8 個
         assert set(fred.SERIES.keys()) == {
             "CPIAUCSL", "PCE", "GDP", "PAYEMS", "UNRATE", "DFF",
+            "DGS2", "DGS10",
         }
 
     def test_each_has_label_unit_freq(self):
         for sid, meta in fred.SERIES.items():
             assert "label" in meta and "unit" in meta and "freq" in meta
+
+
+class TestYieldCurve:
+    def test_yield_curve_no_key_returns_unavailable(self, monkeypatch):
+        monkeypatch.setattr(fred, "_api_key", lambda: None)
+        out = fred.yield_curve(1)
+        assert out["latest"] is None
+        assert out["status"] == "unavailable"
+        assert "data" in out
 
 
 class TestChangePct:
