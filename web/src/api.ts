@@ -25,6 +25,11 @@ export const api = {
   fundamentals: (sym: string) => get<FundamentalsResponse>(`/stock/${sym}/fundamentals`),
   price: (sym: string, days = 120, tf = '1d') => get<PriceResponse>(`/stock/${sym}/price`, { days, tf }),
   stockIntraday: (sym: string, timeframe = '5') => get<PriceResponse>(`/stock/${sym}/intraday`, { timeframe }),
+  stockQuote: (sym: string) => get<{
+    symbol: string; last?: number; previousClose?: number; open?: number; high?: number; low?: number; avg?: number
+    change?: number; change_pct?: number; volume?: number
+    bids?: { price: number; size: number }[]; asks?: { price: number; size: number }[]; time?: string
+  }>(`/stock/${sym}/quote`),
   marketIndex: (days = 60) => get<PriceResponse>('/market/index', { days }),
   indexLive: () => get<{ index?: number; change?: number; change_pct?: number; date?: string; time?: string }>('/market/index/live'),
   indexIntraday: (timeframe = '5') => get<PriceResponse>('/market/index/intraday', { timeframe }),
@@ -72,6 +77,34 @@ export const api = {
     }>(`/stock/${sym}/securities-lending`, { days }),
   yieldCurve: (years = 5) =>
     get<{ data: { date: string; value: number }[]; latest: number | null; status: 'normal' | 'flat' | 'inverted' | 'unavailable'; note: string }>('/market/macro/yield-curve', { years }),
+  // 加密 + 匯率
+  cryptoTop: (limit = 10) =>
+    get<{
+      available: boolean
+      items?: { symbol: string; name: string; price: number; market_cap: number; market_cap_rank: number; volume_24h: number; change_24h_pct: number; change_7d_pct?: number; change_30d_pct?: number; image?: string }[]
+    }>('/market/crypto/top', { limit }),
+  cryptoGlobal: () =>
+    get<{ available: boolean; total_market_cap_usd?: number; btc_dominance?: number; eth_dominance?: number; market_cap_change_pct_24h?: number; active_cryptocurrencies?: number }>('/market/crypto/global'),
+  fx: (base = 'USD') =>
+    get<{ available: boolean; base: string; date?: string; rates: Record<string, number> }>('/market/fx', { base }),
+  movers: (top = 10) =>
+    get<{
+      available: boolean
+      date?: string
+      total_stocks?: number
+      breadth?: { up: number; down: number; flat: number; limit_up: number; limit_down: number }
+      by_value?: { symbol: string; name: string; close: number; change_pct: number; trade_value: number }[]
+      gainers?: { symbol: string; name: string; close: number; change_pct: number }[]
+      losers?: { symbol: string; name: string; close: number; change_pct: number }[]
+      by_volume?: { symbol: string; name: string; close: number; change_pct: number; volume: number }[]
+    }>('/market/movers', { top }),
+  // SEC EDGAR Form 4
+  insider: (sym: string, limit = 20) =>
+    get<{
+      ticker: string; cik?: string; company_name?: string
+      transactions?: { date: string; form: string; accession: string; url: string; filing_url: string }[]
+      count?: number; error?: string
+    }>(`/stock/${sym}/insider`, { limit }),
   futuresPcr: (days = 30) =>
     get<{
       data: { date: string; pcr_volume: number | null; pcr_oi: number | null; call_volume: number; put_volume: number }[]

@@ -1,5 +1,12 @@
 """FastAPI 後端主程式。"""
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 讀取專案根目錄 .env（FUGLE / FRED / FINNHUB / SEC_CONTACT_EMAIL…）。
+# 必須在 import 任何「會讀環境變數」的模組之前執行；override=False，不覆蓋已 export 的變數。
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 import threading
@@ -16,13 +23,17 @@ from sqlalchemy import select, func
 import backtest as bt
 import chip as chip_module
 import commodities
+import crypto
 import finnhub
 import fred
 import fugle
 import fundamentals_extra
+import fx
+import market_movers
 import news_fundamental as nf
 import outlook
 import pine_exporter
+import sec
 import taifex
 import technical
 import watchlist
@@ -231,6 +242,17 @@ async def stock_intraday(symbol: str, timeframe: str = "5"):
     data = await fugle.intraday_candles(symbol, timeframe)
     if not data:
         raise HTTPException(status_code=503, detail="盤中資料暫時無法取得")
+    return data
+
+
+@app.get("/stock/{symbol}/quote")
+async def stock_quote(symbol: str):
+    """個股 / ETF 即時報價快照（Fugle，含五檔）。盤中即時、收盤後回最後一盤。需 FUGLE_API_KEY。"""
+    if not fugle.available():
+        raise HTTPException(status_code=503, detail="需設定 FUGLE_API_KEY")
+    data = await fugle.quote(symbol)
+    if not data:
+        raise HTTPException(status_code=503, detail="即時報價暫時無法取得")
     return data
 
 
@@ -535,6 +557,31 @@ def macro_yield_curve(years: int = 5):
     return fred.yield_curve(years=years)
 
 
+@app.get("/market/crypto/top")
+def market_crypto_top(limit: int = 10):
+    """加密貨幣 top N（CoinGecko 免費 API）。"""
+    return crypto.top_markets(limit=limit)
+
+
+@app.get("/market/crypto/global")
+def market_crypto_global():
+    """加密貨幣全球統計（總市值、BTC/ETH dominance）。"""
+    return crypto.global_stats()
+
+
+@app.get("/market/fx")
+def market_fx(base: str = "USD"):
+    """匯率（USD 對 TWD/JPY/CNY/EUR/GBP/HKD/SGD）。"""
+    return fx.latest_rates(base=base)
+
+
+@app.get("/market/movers")
+def market_movers_rank(top: int = 10):
+    """全市場今日動態：成交額前 N / 漲幅前 N / 跌幅前 N / 成交量前 N + 漲跌停家數統計。
+    資料 T+0（盤後才有，盤中查到的是上一交易日資料）。"""
+    return market_movers.market_movers(top_n=top)
+
+
 @app.get("/market/futures/pcr")
 def futures_pcr(days: int = 30):
     """台指選擇權 Put/Call Ratio（成交量比 + 未平倉比）。資料源 FinMind。"""
@@ -558,6 +605,12 @@ def stock_earnings(symbol: str, days_back: int = 90, days_ahead: int = 90):
 def stock_recommendations(symbol: str):
     """個股分析師評等趨勢（主要美股）。需 FINNHUB_API_KEY。"""
     return finnhub.recommendations(symbol)
+
+
+@app.get("/stock/{symbol}/insider")
+def stock_insider(symbol: str, limit: int = 20):
+    """美股內部人交易（SEC EDGAR Form 4）。免費，無需 key。"""
+    return sec.insider_transactions(symbol, limit=limit)
 
 
 @app.get("/stock/{symbol}/monthly-revenue")

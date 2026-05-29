@@ -1,4 +1,12 @@
+import { useTranslation } from 'react-i18next'
 import type { TechnicalResponse, TechnicalSignal } from '../types'
+
+const TREND_KEY: Record<string, string> = {
+  '多頭排列': 'technical.trend.bullish',
+  '空頭排列': 'technical.trend.bearish',
+  '整理中': 'technical.trend.consolidating',
+  '資料不足': 'technical.trend.insufficient',
+}
 
 function Badge({ type, name }: TechnicalSignal) {
   const color = type === 'bullish' ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
@@ -19,35 +27,37 @@ function Row({ label, value, sub }:
 }
 
 export default function TechnicalPanel({ data }: { data: TechnicalResponse | null }) {
+  const { t } = useTranslation()
   if (!data) return null
   const { ma, rsi, macd, kd, bollinger, trend, signals, close, support, resistance } = data
 
   const trendColor = trend === '多頭排列' ? 'text-red-400' : trend === '空頭排列' ? 'text-green-400' : 'text-yellow-400'
+  const trendLabel = trend != null && TREND_KEY[trend] ? t(TREND_KEY[trend]) : trend
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-2xl font-bold text-slate-100">{close}</span>
-        <span className={`text-sm font-medium ${trendColor}`}>{trend}</span>
+        <span className={`text-sm font-medium ${trendColor}`}>{trendLabel}</span>
         {signals?.map((s, i) => <Badge key={i} {...s} />)}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <p className="text-xs text-slate-500 uppercase mb-1">均線</p>
+          <p className="text-xs text-slate-500 uppercase mb-1">{t('technical.section.ma')}</p>
           {Object.entries(ma ?? {}).map(([k, v]) => (
             <Row key={k} label={k.toUpperCase()} value={v as number | string | null} />
           ))}
         </div>
         <div>
-          <p className="text-xs text-slate-500 uppercase mb-1">指標</p>
-          <Row label="RSI(14)" value={rsi} />
-          <Row label="MACD" value={macd?.macd} sub={`訊號${macd?.signal}`} />
-          <Row label="KD" value={kd?.k != null ? `K ${kd.k}` : null} sub={kd?.d != null ? `D ${kd.d}` : ''} />
-          <Row label="布林上" value={bollinger?.upper} />
-          <Row label="布林下" value={bollinger?.lower} />
-          <Row label="支撐" value={support} />
-          <Row label="壓力" value={resistance} />
+          <p className="text-xs text-slate-500 uppercase mb-1">{t('technical.section.indicators')}</p>
+          <Row label={t('technical.label.rsi')} value={rsi} />
+          <Row label={t('technical.label.macd')} value={macd?.macd} sub={`${t('technical.label.macd_signal')}${macd?.signal}`} />
+          <Row label={t('technical.label.kd')} value={kd?.k != null ? `${t('technical.label.kd_k')} ${kd.k}` : null} sub={kd?.d != null ? `${t('technical.label.kd_d')} ${kd.d}` : ''} />
+          <Row label={t('technical.label.bb_upper')} value={bollinger?.upper} />
+          <Row label={t('technical.label.bb_lower')} value={bollinger?.lower} />
+          <Row label={t('technical.label.support')} value={support} />
+          <Row label={t('technical.label.resistance')} value={resistance} />
         </div>
       </div>
     </div>

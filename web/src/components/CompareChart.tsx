@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createChart, LineSeries, IChartApi, LineData, Time } from 'lightweight-charts'
 import { api } from '../api'
 import type { Bar } from '../types'
@@ -11,13 +12,13 @@ import { toTime } from '../lib/charts'
 
 const COLORS = ['#38bdf8', '#fb7185', '#facc15', '#22c55e', '#a78bfa', '#fb923c']
 
-const RANGES: { label: string; days: number }[] = [
-  { label: '1月', days: 30 },
-  { label: '3月', days: 90 },
-  { label: '6月', days: 180 },
-  { label: '1年', days: 365 },
-  { label: '3年', days: 1095 },
-  { label: '5年', days: 1825 },
+const RANGES: { labelKey: string; days: number }[] = [
+  { labelKey: 'compare.range.1m', days: 30 },
+  { labelKey: 'compare.range.3m', days: 90 },
+  { labelKey: 'compare.range.6m', days: 180 },
+  { labelKey: 'compare.range.1y', days: 365 },
+  { labelKey: 'compare.range.3y', days: 1095 },
+  { labelKey: 'compare.range.5y', days: 1825 },
 ]
 
 interface SymbolBars { symbol: string; name?: string; bars: Bar[]; error?: string }
@@ -46,6 +47,7 @@ function normalize(bars: Bar[]): { time: string; value: number }[] {
 }
 
 export default function CompareChart() {
+  const { t } = useTranslation()
   const [symbols, setSymbols] = useState<string[]>(['2330', '2454'])
   const [input, setInput] = useState('')
   const [rangeIdx, setRangeIdx] = useState(3)  // 預設 1 年
@@ -95,7 +97,7 @@ export default function CompareChart() {
       line.setData(data.map(d => ({ time: toTime(d.time), value: d.value })) as unknown as LineData<Time>[])
       if (i === 0) {
         // 第一條加 100 baseline price line
-        line.createPriceLine({ price: 100, color: '#64748b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '基準' })
+        line.createPriceLine({ price: 100, color: '#64748b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: t('compare.baseline') })
       }
     })
 
@@ -103,7 +105,7 @@ export default function CompareChart() {
     const obs = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }))
     obs.observe(el)
     return () => { obs.disconnect(); chart.remove(); chartRef.current = null }
-  }, [series])
+  }, [series, t])
 
   const addSymbol = (e: React.FormEvent) => {
     e.preventDefault()
@@ -131,21 +133,21 @@ export default function CompareChart() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold text-slate-100">股票對比 · Compare</h2>
+        <h2 className="text-lg font-bold text-slate-100">{t('compare.title')}</h2>
         <p className="text-xs text-slate-500 mt-1">
-          多支股票/商品 normalize 到 100 疊圖，看相對強弱。台股代碼或國際商品（GC/SPX/BTC...）均可。最多 6 條。
+          {t('compare.subtitle')}
         </p>
       </div>
 
       {/* 新增符號 */}
       <form onSubmit={addSymbol} className="flex gap-2">
         <input value={input} onChange={e => setInput(e.target.value)}
-          placeholder="輸入代碼，如 2330 / 2454 / 0050 / GC / SPX / BTC"
+          placeholder={t('compare.input_placeholder')}
           className="flex-1 bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
         <button type="submit"
           className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-sm font-medium disabled:opacity-50"
           disabled={symbols.length >= 6}>
-          加入
+          {t('common.add')}
         </button>
       </form>
 
@@ -173,19 +175,19 @@ export default function CompareChart() {
       {/* 時間區間 */}
       <div className="flex flex-wrap gap-1">
         {RANGES.map((r, i) => (
-          <button key={r.label} onClick={() => setRangeIdx(i)}
+          <button key={r.labelKey} onClick={() => setRangeIdx(i)}
             className={`text-xs px-3 py-1 rounded ${rangeIdx === i ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-            {r.label}
+            {t(r.labelKey)}
           </button>
         ))}
       </div>
 
       {/* 圖 */}
-      {loading && <p className="text-slate-500 text-sm">載入中…</p>}
+      {loading && <p className="text-slate-500 text-sm">{t('common.loading')}</p>}
       <div ref={containerRef} className="w-full rounded-lg overflow-hidden" />
 
       <p className="text-[10px] text-slate-600">
-        所有 series 以區間第一根 K 線為 100 基準，看相對強弱。例如 2330 100→130 vs 2454 100→110 表示 2330 在這段期間漲贏 2454 20%。
+        {t('compare.footnote')}
       </p>
     </div>
   )

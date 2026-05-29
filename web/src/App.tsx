@@ -31,6 +31,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 // 全部 lazy 化讓 Vite 自動抽出 shared chunk，初次載入只下載 ~200KB main bundle
 const MarketOverview = lazy(() => import('./components/MarketOverview'))
 const PriceChart = lazy(() => import('./components/PriceChart'))
+const LiveQuote = lazy(() => import('./components/LiveQuote'))
 const TechnicalPanel = lazy(() => import('./components/TechnicalPanel'))
 const ChipPanel = lazy(() => import('./components/ChipPanel'))
 const BacktestPanel = lazy(() => import('./components/BacktestPanel'))
@@ -418,160 +419,211 @@ export default function App() {
                     scannedAt={scanAt}
                     onRescan={runScan}
                     onSelectStock={goStock}
-                  />
-                </ErrorBoundary>
+                    {view === 'macro' && (
+                      <Card>
+                        <ErrorBoundary label={t('nav.macro')}>
+                          <MacroPanel onJumpGlobal={() => setView('global')} />
+                        </ErrorBoundary>
+                      </Card>
+                    )}
+
+                    {view === 'compare' && (
+                      <Card>
+                        <ErrorBoundary label={t('nav.compare')}>
+                          <CompareChart />
+                        </ErrorBoundary>
+                      </Card>
+                    )}
+
+                    {view === 'watchlist' && (
+                      <Card>
+                        <ErrorBoundary label={t('nav.watchlist')}>
+                          <WatchlistPanel onSelectStock={goStock} />
+                        </ErrorBoundary>
+                      </Card>
+                    )}
+
+                    {view === 'stock' && symbol && (
+                      <>
+                        {/* 即時報價（Fugle，含五檔）— 台股/ETF 盤中每 3 秒更新 */}
+                        <ErrorBoundary label={t('quote.live')}>
+                          <LiveQuote symbol={symbol} />
+                        </ErrorBoundary>
+
+                        {/* K 線圖 */}
+                        <Card title={`${symbol} · ${t('card.kline')}`}>
+                          <div className="flex flex-wrap gap-1 mb-3">
+                            {CHART_TFS.map(o => (
+                              <button key={o.tf} onClick={() => setChartTf(o.tf)}
+                                className={`text-xs px-3 py-1 rounded-full ${chartTf === o.tf ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                                {t(`kline_tf.${o.tf}`)}
+                              </button>
+                            ))}
+                          </div>
+                          {price.loading && <Spinner />}
+                          {price.data && (
+                            // key 強制在切時間框架時整個重建，避免 lightweight-charts 內部殘留狀態
+                            <ErrorBoundary label={t('card.kline')} onReset={() => setChartTf(chartTf)}>
+                              <PriceChart
+                                key={`${symbol}-${chartTf}`}
+                                data={price.data.data}
+                                mas={chartTf === '1d' ? mas : EMPTY_MAS}
+                                intraday={chartTf === 'intraday'}
+                                previousClose={chartTf === 'intraday' ? (price.data.previousClose ?? null) : null}
+                              />
+                            </ErrorBoundary>
               </Card>
-              <Card title="週線W底突破 — 全市場掃描">
-                <ErrorBoundary label="週線W底掃描">
-                  <WeeklyWBottomScanPanel
-                    data={wScanData}
-                    loading={wScanLoading}
-                    error={wScanError}
-                    scannedAt={wScanAt}
-                    onRescan={runWScan}
-                    onSelectStock={goStock}
-                  />
-                </ErrorBoundary>
-              </Card>
-            </>
+                        <Card title="週線W底突破 — 全市場掃描">
+                          <ErrorBoundary label="週線W底掃描">
+                            <WeeklyWBottomScanPanel
+                              data={wScanData}
+                              loading={wScanLoading}
+                              error={wScanError}
+                              scannedAt={wScanAt}
+                              onRescan={runWScan}
+                              onSelectStock={goStock}
+                            />
+                          </ErrorBoundary>
+                        </Card>
+                      </>
         {view === 'compare' && (
-            <Card>
-              <ErrorBoundary label={t('nav.compare')}>
-                <CompareChart />
-              </ErrorBoundary>
-            </Card>
-          )}
+                      <Card>
+                        <ErrorBoundary label={t('nav.compare')}>
+                          <CompareChart />
+                        </ErrorBoundary>
+                      </Card>
+                    )}
 
-          {view === 'watchlist' && (
-            <Card>
-              <ErrorBoundary label={t('nav.watchlist')}>
-                <WatchlistPanel onSelectStock={goStock} />
-              </ErrorBoundary>
-            </Card>
-          )}
+                    {view === 'watchlist' && (
+                      <Card>
+                        <ErrorBoundary label={t('nav.watchlist')}>
+                          <WatchlistPanel onSelectStock={goStock} />
+                        </ErrorBoundary>
+                      </Card>
+                    )}
 
-          {view === 'stock' && symbol && (
-            <>
-              {/* K 線圖 */}
-              <Card>
-                {/* 股名 + 股價 大字 header */}
-                <div className="flex items-baseline gap-3 mb-3">
-                  <span className="text-2xl font-bold text-white">
-                    {price.data?.name ?? symbol}
-                  </span>
-                  <span className="text-slate-400 text-base">{symbol}</span>
-                  {(() => {
-                    const bars = price.data?.data
-                    const last = bars?.[bars.length - 1]
-                    if (!last) return null
-                    const prev = bars?.[bars.length - 2]
-                    const chg = prev ? last.close - prev.close : 0
-                    const chgPct = prev ? (chg / prev.close) * 100 : 0
-                    const up = chg >= 0
-                    return (
-                      <span className={`text-2xl font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>
-                        {last.close.toFixed(2)}
-                        <span className="text-sm font-normal ml-2">
-                          {up ? '+' : ''}{chg.toFixed(2)} ({up ? '+' : ''}{chgPct.toFixed(2)}%)
-                        </span>
-                      </span>
-                    )
-                  })()}
-                </div>
+                    {view === 'stock' && symbol && (
+                      <>
+                        {/* K 線圖 */}
+                        <Card>
+                          {/* 股名 + 股價 大字 header */}
+                          <div className="flex items-baseline gap-3 mb-3">
+                            <span className="text-2xl font-bold text-white">
+                              {price.data?.name ?? symbol}
+                            </span>
+                            <span className="text-slate-400 text-base">{symbol}</span>
+                            {(() => {
+                              const bars = price.data?.data
+                              const last = bars?.[bars.length - 1]
+                              if (!last) return null
+                              const prev = bars?.[bars.length - 2]
+                              const chg = prev ? last.close - prev.close : 0
+                              const chgPct = prev ? (chg / prev.close) * 100 : 0
+                              const up = chg >= 0
+                              return (
+                                <span className={`text-2xl font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>
+                                  {last.close.toFixed(2)}
+                                  <span className="text-sm font-normal ml-2">
+                                    {up ? '+' : ''}{chg.toFixed(2)} ({up ? '+' : ''}{chgPct.toFixed(2)}%)
+                                  </span>
+                                </span>
+                              )
+                            })()}
+                          </div>
 
-                {/* 時間框架切換 */}
-                <Card title={`${symbol} · ${t('card.kline')}`}>
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {CHART_TFS.map(o => (
-                      <button key={o.tf} onClick={() => setChartTf(o.tf)}
-                        className={`text-xs px-3 py-1 rounded-full ${chartTf === o.tf ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                        {t(`kline_tf.${o.tf}`)}
-                      </button>
-                    ))}
-                  </div>
-                  {price.loading && <Spinner />}
-                  {price.data && (
-                    // key 強制在切時間框架時整個重建，避免 lightweight-charts 內部殘留狀態
-                    <ErrorBoundary label={t('card.kline')} onReset={() => setChartTf(chartTf)}>
-                      <PriceChart
-                        key={`${symbol}-${chartTf}`}
-                        data={price.data.data}
-                        mas={chartTf === 'intraday' ? EMPTY_MAS : mas}
-                        intraday={chartTf === 'intraday'}
-                        previousClose={chartTf === 'intraday' ? (price.data.previousClose ?? null) : null}
-                      />
-                    </ErrorBoundary>
-                  )}
+                          {/* 時間框架切換 */}
+                          <Card title={`${symbol} · ${t('card.kline')}`}>
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {CHART_TFS.map(o => (
+                                <button key={o.tf} onClick={() => setChartTf(o.tf)}
+                                  className={`text-xs px-3 py-1 rounded-full ${chartTf === o.tf ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                                  {t(`kline_tf.${o.tf}`)}
+                                </button>
+                              ))}
+                            </div>
+                            {price.loading && <Spinner />}
+                            {price.data && (
+                              // key 強制在切時間框架時整個重建，避免 lightweight-charts 內部殘留狀態
+                              <ErrorBoundary label={t('card.kline')} onReset={() => setChartTf(chartTf)}>
+                                <PriceChart
+                                  key={`${symbol}-${chartTf}`}
+                                  data={price.data.data}
+                                  mas={chartTf === 'intraday' ? EMPTY_MAS : mas}
+                                  intraday={chartTf === 'intraday'}
+                                  previousClose={chartTf === 'intraday' ? (price.data.previousClose ?? null) : null}
+                                />
+                              </ErrorBoundary>
+                            )}
 
-                  {/* 均線圖例（日K 才顯示） */}
-                  {chartTf !== 'intraday' && price.data && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
-                      {([
-                        { key: 'ma5', label: 'MA5', color: '#f59e0b' },
-                        { key: 'ma10', label: 'MA10', color: '#a78bfa' },
-                        { key: 'ma20', label: 'MA20', color: '#38bdf8' },
-                        { key: 'ma60', label: 'MA60', color: '#fb7185' },
-                        { key: 'ma120', label: 'MA120', color: '#4ade80' },
-                        { key: 'ma240', label: 'MA240', color: '#f97316' },
-                      ] as const).filter(m => mas[m.key]?.length).map(m => (
-                        <span key={m.key} className="flex items-center gap-1">
-                          <span className="inline-block w-5 h-0.5 rounded" style={{ backgroundColor: m.color }} />
-                          <span style={{ color: m.color }}>{m.label}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </Card>
+                            {/* 均線圖例（日K 才顯示） */}
+                            {chartTf !== 'intraday' && price.data && (
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
+                                {([
+                                  { key: 'ma5', label: 'MA5', color: '#f59e0b' },
+                                  { key: 'ma10', label: 'MA10', color: '#a78bfa' },
+                                  { key: 'ma20', label: 'MA20', color: '#38bdf8' },
+                                  { key: 'ma60', label: 'MA60', color: '#fb7185' },
+                                  { key: 'ma120', label: 'MA120', color: '#4ade80' },
+                                  { key: 'ma240', label: 'MA240', color: '#f97316' },
+                                ] as const).filter(m => mas[m.key]?.length).map(m => (
+                                  <span key={m.key} className="flex items-center gap-1">
+                                    <span className="inline-block w-5 h-0.5 rounded" style={{ backgroundColor: m.color }} />
+                                    <span style={{ color: m.color }}>{m.label}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </Card>
 
-                {/* Tab 切換 */}
-                <div>
-                  <div className="flex gap-1 border-b border-slate-800 mb-4">
-                    {TAB_KEYS.map(key => (
-                      <button key={key} onClick={() => setActiveTab(key)}
-                        className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${activeTab === key ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
-                        {t(`tabs.${key}`)}
-                      </button>
-                    ))}
-                  </div>
+                          {/* Tab 切換 */}
+                          <div>
+                            <div className="flex gap-1 border-b border-slate-800 mb-4">
+                              {TAB_KEYS.map(key => (
+                                <button key={key} onClick={() => setActiveTab(key)}
+                                  className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${activeTab === key ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                                  {t(`tabs.${key}`)}
+                                </button>
+                              ))}
+                            </div>
 
-                  <Card>
-                    <ErrorBoundary label={t(`tabs.${activeTab}`)}>
-                      {activeTab === 'outlook' && (
-                        outlook.loading ? <Spinner /> : <OutlookPanel data={outlook.data} />
-                      )}
-                      {activeTab === 'technical' && (
-                        technical.loading ? <Spinner /> : <TechnicalPanel data={technical.data} />
-                      )}
-                      {activeTab === 'chip' && (
-                        chip.loading ? <Spinner /> : <ChipPanel data={chip.data} symbol={symbol} />
-                      )}
-                      {activeTab === 'backtest' && (
-                        backtest.loading
-                          ? <Spinner />
-                          : <BacktestPanel data={backtest.data} signal={btSignal} onSignalChange={setBtSignal} />
-                      )}
-                      {activeTab === '型態' && symbol && (
-                        <PatternPanel symbol={symbol} />
-                      )}
-                      {activeTab === '基本面' && (
-                        fundamentals.loading ? <Spinner /> : <FundamentalsPanel data={fundamentals.data} />
+                            <Card>
+                              <ErrorBoundary label={t(`tabs.${activeTab}`)}>
+                                {activeTab === 'outlook' && (
+                                  outlook.loading ? <Spinner /> : <OutlookPanel data={outlook.data} />
+                                )}
+                                {activeTab === 'technical' && (
+                                  technical.loading ? <Spinner /> : <TechnicalPanel data={technical.data} />
+                                )}
+                                {activeTab === 'chip' && (
+                                  chip.loading ? <Spinner /> : <ChipPanel data={chip.data} symbol={symbol} />
+                                )}
+                                {activeTab === 'backtest' && (
+                                  backtest.loading
+                                    ? <Spinner />
+                                    : <BacktestPanel data={backtest.data} signal={btSignal} onSignalChange={setBtSignal} />
+                                )}
+                                {activeTab === '型態' && symbol && (
+                                  <PatternPanel symbol={symbol} />
+                                )}
+                                {activeTab === '基本面' && (
+                                  fundamentals.loading ? <Spinner /> : <FundamentalsPanel data={fundamentals.data} />
                   {activeTab === 'fundamentals' && (
-                        fundamentals.loading ? <Spinner /> : <FundamentalsPanel data={fundamentals.data} symbol={symbol} />
-                      )}
-                      {activeTab === 'news' && (
-                        news.loading ? <Spinner /> : <NewsPanel news={news.data?.news} />
-                      )}
-                    </ErrorBoundary>
-                  </Card>
-                </div>
-              </>
+                                  fundamentals.loading ? <Spinner /> : <FundamentalsPanel data={fundamentals.data} symbol={symbol} />
+                                )}
+                                {activeTab === 'news' && (
+                                  news.loading ? <Spinner /> : <NewsPanel news={news.data?.news} />
+                                )}
+                              </ErrorBoundary>
+                            </Card>
+                          </div>
+                        </>
         )}
 
-              {view === 'stock' && !symbol && (
-                <p className="text-slate-500 text-center py-12">{t('common.stock_view_hint')}</p>
-              )}
-            </Suspense>
-      </main>
-    </div>
-  )
+                        {view === 'stock' && !symbol && (
+                          <p className="text-slate-500 text-center py-12">{t('common.stock_view_hint')}</p>
+                        )}
+                      </Suspense>
+                  </main>
+                </div>
+                )
 }

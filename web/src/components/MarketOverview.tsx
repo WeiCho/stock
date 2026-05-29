@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createChart, AreaSeries, BaselineSeries, LineSeries } from 'lightweight-charts'
 import { api } from '../api'
 import type { Bar, BigOrder, MoneyFlowResponse, RankRow, SectorRow } from '../types'
 import { toTime, isTradingHours, SESSION_MINUTES } from '../lib/charts'
 
 function IndexChart({ data, intraday, previousClose }: { data?: Bar[]; intraday?: boolean; previousClose?: number | null }) {
+  const { t } = useTranslation()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = ref.current
@@ -70,7 +72,7 @@ function IndexChart({ data, intraday, previousClose }: { data?: Bar[]; intraday?
         lineWidth: 1,
         lineStyle: 2, // Dashed
         axisLabelVisible: true,
-        title: '昨收',
+        title: t('chart.prev_close'),
       })
     }
 
@@ -89,7 +91,7 @@ function IndexChart({ data, intraday, previousClose }: { data?: Bar[]; intraday?
     const obs = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }))
     obs.observe(el)
     return () => { obs.disconnect(); chart.remove() }
-  }, [data, intraday, previousClose])
+  }, [data, intraday, previousClose, t])
   return <div ref={ref} className="w-full rounded-lg overflow-hidden" />
 }
 
@@ -99,14 +101,16 @@ const fmtLots = (n: number) => (n >= 0 ? '+' : '') + Math.round(n).toLocaleStrin
 const fmtPct = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`)
 const fmtIdx = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const fmtDate = (d: string | null | undefined) => (d && d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : d)
-const fmtTurnover = (n: number | null | undefined) => (n == null ? '—' : n >= 1e12 ? `${(n / 1e12).toFixed(2)} 兆` : `${Math.round(n / 1e8).toLocaleString()} 億`)
+const fmtTurnover = (n: number | null | undefined, t: (k: string) => string) =>
+  (n == null ? '—' : n >= 1e12 ? `${(n / 1e12).toFixed(2)} ${t('market.unit_trillion')}` : `${Math.round(n / 1e8).toLocaleString()} ${t('market.unit_hundred_million')}`)
 
 function FlowTile({ label, value }: { label: string; value: number }) {
+  const { t } = useTranslation()
   return (
     <div className="bg-slate-800 rounded-lg p-3 text-center">
       <p className="text-xs text-slate-500 mb-1">{label}</p>
       <p className={`text-base sm:text-lg font-bold font-mono ${sign(value)}`}>{fmtLots(value)}</p>
-      <p className="text-[10px] text-slate-600">張</p>
+      <p className="text-[10px] text-slate-600">{t('market.unit_lots')}</p>
     </div>
   )
 }
@@ -134,6 +138,7 @@ function RankTable({ title, rows, field, onSelect }:
 }
 
 function SectorList({ title, rows }: { title: string; rows?: SectorRow[] }) {
+  const { t } = useTranslation()
   if (!rows?.length) return null
   return (
     <div>
@@ -143,7 +148,7 @@ function SectorList({ title, rows }: { title: string; rows?: SectorRow[] }) {
           {rows.map(s => (
             <tr key={s.industry} className="border-b border-slate-800">
               <td className="py-1 text-slate-300">{s.industry}</td>
-              <td className="py-1 text-slate-600 text-right pr-2">{s.count}檔</td>
+              <td className="py-1 text-slate-600 text-right pr-2">{s.count}{t('market.unit_stocks')}</td>
               <td className={`py-1 text-right font-mono ${sign(s.total)}`}>{fmtLots(s.total)}</td>
             </tr>
           ))}
@@ -154,13 +159,27 @@ function SectorList({ title, rows }: { title: string; rows?: SectorRow[] }) {
 }
 
 // 0 = 當日（Fugle 盤中 5 分鐘）；其餘為日線歷史的回溯天數
-const RANGES: [string, number][] = [['當日', 0], ['3日', 3], ['1月', 30], ['3月', 90], ['6月', 180], ['1年', 365], ['5年', 1825]]
+const RANGES: [string, number][] = [['market.range.intraday', 0], ['market.range.3d', 3], ['market.range.1m', 30], ['market.range.3m', 90], ['market.range.6m', 180], ['market.range.1y', 365], ['market.range.5y', 1825]]
+
+interface Mover { symbol: string; name: string; close: number; change_pct: number; trade_value?: number; volume?: number }
+interface MoversResp {
+  available?: boolean
+  date?: string
+  total_stocks?: number
+  breadth?: { up: number; down: number; flat: number; limit_up: number; limit_down: number }
+  by_value?: Mover[]
+  gainers?: Mover[]
+  losers?: Mover[]
+}
 
 export default function MarketOverview({ moneyFlow, onSelectStock }:
   { moneyFlow?: MoneyFlowResponse | null; onSelectStock?: (sym: string) => void }) {
+  const { t } = useTranslation()
   // 指數走勢：依選擇的時間區間抓取；當日 = Fugle IX0001 盤中分鐘 K
   const [days, setDays] = useState(180)
   const [index, setIndex] = useState<any>(null)
+  const [movers, setMovers] = useState<MoversResp | null>(null)
+
   useEffect(() => {
     let active = true
     setIndex(null)
@@ -168,6 +187,13 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
     p.then(d => { if (active) setIndex(d) }).catch(() => {})
     return () => { active = false }
   }, [days])
+
+  // 全市場 movers — 5 min cache 後端，安全可常呼叫
+  useEffect(() => {
+    let active = true
+    api.movers(5).then(d => { if (active) setMovers(d) }).catch(() => {})
+    return () => { active = false }
+  }, [])
 
   const data = index?.data || []
   const latest = data.at(-1)
@@ -211,15 +237,15 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
       {/* 今日大單敲進（Fugle 逐筆，盤中即時） */}
       {bigOrders?.available && bigOrders.orders?.length > 0 && (
         <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg p-3">
-          <p className="text-xs text-amber-400 uppercase mb-2">🔥 今日大單敲進（單筆大額成交，盤中即時）</p>
+          <p className="text-xs text-amber-400 uppercase mb-2">{t('market.big_orders_title')}</p>
           <div className="flex flex-wrap gap-2">
             {bigOrders.orders.map((o: BigOrder) => (
               <button key={o.symbol} onClick={() => onSelectStock?.(o.symbol)}
                 className="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">
                 <span className="text-amber-300 font-medium">{o.name}</span>
                 <span className="text-slate-500 ml-1 font-mono">{o.symbol}</span>
-                <span className="text-slate-300 ml-1 font-mono">{o.max_size}張@{o.price}</span>
-                <span className="text-amber-400 ml-1 font-mono">{(o.max_amount / 1e8).toFixed(2)}億</span>
+                <span className="text-slate-300 ml-1 font-mono">{o.max_size}{t('market.unit_lots')}@{o.price}</span>
+                <span className="text-amber-400 ml-1 font-mono">{(o.max_amount / 1e8).toFixed(2)}{t('market.unit_hundred_million')}</span>
               </button>
             ))}
           </div>
@@ -238,16 +264,16 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
           {live?.time ? (
             <span className="text-xs text-emerald-400 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              加權指數 {fmtDate(live.date)} {live.time}
+              {t('market.taiex_label')} {fmtDate(live.date)} {live.time}
             </span>
           ) : (
-            <span className="text-xs text-slate-500">加權指數 {latest?.date}</span>
+            <span className="text-xs text-slate-500">{t('market.taiex_label')} {latest?.date}</span>
           )}
           {days !== 0 && (
             <span className="text-xs text-slate-500 ml-auto">
-              近5日 <b className={sign(chg5 ?? 0)}>{fmtPct(chg5)}</b>
+              {t('market.last_5d')} <b className={sign(chg5 ?? 0)}>{fmtPct(chg5)}</b>
               <span className="mx-1">·</span>
-              近20日 <b className={sign(chg20 ?? 0)}>{fmtPct(chg20)}</b>
+              {t('market.last_20d')} <b className={sign(chg20 ?? 0)}>{fmtPct(chg20)}</b>
             </span>
           )}
         </div>
@@ -255,28 +281,100 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
           {RANGES.map(([label, d]) => (
             <button key={d} onClick={() => setDays(d)}
               className={`text-xs px-2 py-0.5 rounded ${days === d ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
         <div className="mt-2"><IndexChart data={data} intraday={days === 0} previousClose={index?.previousClose ?? null} /></div>
       </div>
 
+      {/* 全市場動態 — 成交額/漲跌幅 Top 5（盤後 T+0）*/}
+      {movers?.available && (
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <p className="text-xs text-slate-500 uppercase">{t('market.movers_title')} · {movers.date}</p>
+            {movers.breadth && (
+              <p className="text-xs text-slate-500">
+                <b className="text-red-400">▲{movers.breadth.up}</b>
+                <span className="mx-1">·</span>
+                <b className="text-green-400">▼{movers.breadth.down}</b>
+                <span className="mx-1">·</span>
+                <span>={movers.breadth.flat}</span>
+                <span className="ml-3 text-red-400">{t('market.limit_up')} {movers.breadth.limit_up}</span>
+                <span className="ml-2 text-green-400">{t('market.limit_down')} {movers.breadth.limit_down}</span>
+                <span className="ml-3 text-slate-600">{t('market.total_count')} {movers.total_stocks}</span>
+              </p>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            {/* 成交額 */}
+            <div>
+              <p className="text-slate-500 uppercase mb-1">{t('market.top_turnover')}</p>
+              <table className="w-full"><tbody>
+                {movers.by_value?.slice(0, 5).map(m => (
+                  <tr key={m.symbol} onClick={() => onSelectStock?.(m.symbol)}
+                    className="border-b border-slate-800 hover:bg-slate-800/60 cursor-pointer">
+                    <td className="py-1 text-blue-300 font-mono">{m.symbol}</td>
+                    <td className="text-slate-400 truncate max-w-[7rem]">{m.name}</td>
+                    <td className={`text-right font-mono ${m.change_pct >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      {m.change_pct >= 0 ? '+' : ''}{m.change_pct}%
+                    </td>
+                    <td className="text-right text-slate-500 font-mono">
+                      {m.trade_value ? `${(m.trade_value / 1e8).toFixed(0)}${t('market.unit_hundred_million')}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+            {/* 漲幅 */}
+            <div>
+              <p className="text-slate-500 uppercase mb-1">{t('market.top_gainers')}</p>
+              <table className="w-full"><tbody>
+                {movers.gainers?.slice(0, 5).map(m => (
+                  <tr key={m.symbol} onClick={() => onSelectStock?.(m.symbol)}
+                    className="border-b border-slate-800 hover:bg-slate-800/60 cursor-pointer">
+                    <td className="py-1 text-blue-300 font-mono">{m.symbol}</td>
+                    <td className="text-slate-400 truncate max-w-[7rem]">{m.name}</td>
+                    <td className="text-right text-red-400 font-mono">+{m.change_pct}%</td>
+                    <td className="text-right text-slate-500 font-mono">{m.close}</td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+            {/* 跌幅 */}
+            <div>
+              <p className="text-slate-500 uppercase mb-1">{t('market.top_losers')}</p>
+              <table className="w-full"><tbody>
+                {movers.losers?.slice(0, 5).map(m => (
+                  <tr key={m.symbol} onClick={() => onSelectStock?.(m.symbol)}
+                    className="border-b border-slate-800 hover:bg-slate-800/60 cursor-pointer">
+                    <td className="py-1 text-blue-300 font-mono">{m.symbol}</td>
+                    <td className="text-slate-400 truncate max-w-[7rem]">{m.name}</td>
+                    <td className="text-right text-green-400 font-mono">{m.change_pct}%</td>
+                    <td className="text-right text-slate-500 font-mono">{m.close}</td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 盤後市場概況（成交金額、漲跌家數、三大法人；皆為收盤後資料，無官方即時版） */}
       {moneyFlow?.summary && (
         <div className="space-y-3">
           <p className="text-xs text-slate-500 uppercase">
-            盤後市場概況 · {moneyFlow.date}（收盤後資料）
+            {t('market.after_hours_summary')} · {moneyFlow.date}{t('market.post_close_note')}
           </p>
 
           {moneyFlow.market_stats && (moneyFlow.market_stats.turnover != null || moneyFlow.market_stats.up != null) && (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm bg-slate-800/50 rounded-lg px-3 py-2">
               {moneyFlow.market_stats.turnover != null && (
-                <span className="text-slate-400">成交金額 <b className="text-slate-100 font-mono">{fmtTurnover(moneyFlow.market_stats.turnover)}</b></span>
+                <span className="text-slate-400">{t('market.turnover')} <b className="text-slate-100 font-mono">{fmtTurnover(moneyFlow.market_stats.turnover, t)}</b></span>
               )}
               {moneyFlow.market_stats.up != null && (
                 <span className="text-slate-400">
-                  漲跌家數
+                  {t('market.advance_decline')}
                   <b className="text-red-400 font-mono ml-1">▲{moneyFlow.market_stats.up}</b>
                   <b className="text-green-400 font-mono ml-1">▼{moneyFlow.market_stats.down}</b>
                   <span className="text-slate-500 font-mono ml-1">→{moneyFlow.market_stats.unchanged}</span>
@@ -285,29 +383,29 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
             </div>
           )}
 
-          <p className="text-xs text-slate-500">三大法人買賣超（張，資料來源 TWSE 上市）</p>
+          <p className="text-xs text-slate-500">{t('market.institutional_net_caption')}</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <FlowTile label="外資" value={moneyFlow.summary.foreign} />
-            <FlowTile label="投信" value={moneyFlow.summary.trust} />
-            <FlowTile label="自營商" value={moneyFlow.summary.dealer} />
-            <FlowTile label="三大法人合計" value={moneyFlow.summary.total} />
+            <FlowTile label={t('market.foreign')} value={moneyFlow.summary.foreign} />
+            <FlowTile label={t('market.trust')} value={moneyFlow.summary.trust} />
+            <FlowTile label={t('market.dealer')} value={moneyFlow.summary.dealer} />
+            <FlowTile label={t('market.institutional_total')} value={moneyFlow.summary.total} />
           </div>
 
           {moneyFlow.sector_flow?.inflow && moneyFlow.sector_flow.inflow.length > 0 && (
             <div>
-              <p className="text-xs text-slate-500 uppercase mb-2 mt-1">類股資金流向（三大法人淨買賣超，張）</p>
+              <p className="text-xs text-slate-500 uppercase mb-2 mt-1">{t('market.sector_flow_caption')}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <SectorList title="資金流入類股" rows={moneyFlow.sector_flow.inflow} />
-                <SectorList title="資金流出類股" rows={moneyFlow.sector_flow.outflow} />
+                <SectorList title={t('market.sector_inflow')} rows={moneyFlow.sector_flow.inflow} />
+                <SectorList title={t('market.sector_outflow')} rows={moneyFlow.sector_flow.outflow} />
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <RankTable title="外資買超" rows={moneyFlow.foreign_buy} field="foreign" onSelect={onSelectStock} />
-            <RankTable title="外資賣超" rows={moneyFlow.foreign_sell} field="foreign" onSelect={onSelectStock} />
-            <RankTable title="投信買超" rows={moneyFlow.trust_buy} field="trust" onSelect={onSelectStock} />
-            <RankTable title="投信賣超" rows={moneyFlow.trust_sell} field="trust" onSelect={onSelectStock} />
+            <RankTable title={t('market.foreign_buy')} rows={moneyFlow.foreign_buy} field="foreign" onSelect={onSelectStock} />
+            <RankTable title={t('market.foreign_sell')} rows={moneyFlow.foreign_sell} field="foreign" onSelect={onSelectStock} />
+            <RankTable title={t('market.trust_buy')} rows={moneyFlow.trust_buy} field="trust" onSelect={onSelectStock} />
+            <RankTable title={t('market.trust_sell')} rows={moneyFlow.trust_sell} field="trust" onSelect={onSelectStock} />
           </div>
         </div>
       )}

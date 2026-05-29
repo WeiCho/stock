@@ -48,5 +48,379 @@
     "error_prefix": "元件發生錯誤",
     "lang_switch": "EN",
     "stock_view_hint": "輸入股票代碼開始分析"
+  },
+  "market": {
+    "prev_close": "昨收",
+    "unit_trillion": "兆",
+    "unit_hundred_million": "億",
+    "unit_lots": "張",
+    "unit_stocks": "檔",
+    "range": {
+      "intraday": "當日",
+      "3d": "3日",
+      "1m": "1月",
+      "3m": "3月",
+      "6m": "6月",
+      "1y": "1年",
+      "5y": "5年"
+    },
+    "big_orders_title": "🔥 今日大單敲進（單筆大額成交，盤中即時）",
+    "taiex_label": "加權指數",
+    "last_5d": "近5日",
+    "last_20d": "近20日",
+    "movers_title": "📊 全市場動態",
+    "limit_up": "漲停",
+    "limit_down": "跌停",
+    "total_count": "共",
+    "top_turnover": "💰 成交額 Top 5",
+    "top_gainers": "🔥 漲幅 Top 5",
+    "top_losers": "❄️ 跌幅 Top 5",
+    "after_hours_summary": "盤後市場概況",
+    "post_close_note": "（收盤後資料）",
+    "turnover": "成交金額",
+    "advance_decline": "漲跌家數",
+    "institutional_net_caption": "三大法人買賣超（張，資料來源 TWSE 上市）",
+    "foreign": "外資",
+    "trust": "投信",
+    "dealer": "自營商",
+    "institutional_total": "三大法人合計",
+    "sector_flow_caption": "類股資金流向（三大法人淨買賣超，張）",
+    "sector_inflow": "資金流入類股",
+    "sector_outflow": "資金流出類股",
+    "foreign_buy": "外資買超",
+    "foreign_sell": "外資賣超",
+    "trust_buy": "投信買超",
+    "trust_sell": "投信賣超"
+  },
+  "futures": {
+    "group": {
+      "tw_futures": "台股期貨",
+      "commodities": "國際商品"
+    },
+    "symbol": {
+      "TX": "台指期",
+      "MTX": "小台",
+      "TE": "電子期",
+      "TF": "金融期",
+      "GC": "黃金",
+      "CL": "原油 WTI",
+      "SI": "白銀",
+      "HG": "銅"
+    },
+    "range": {
+      "intraday": "當日",
+      "3d": "3日",
+      "5d": "5日",
+      "1w": "1週",
+      "2w": "2週",
+      "3w": "3週",
+      "1mo": "1月",
+      "3mo": "3月",
+      "6mo": "6月",
+      "ytd": "YTD",
+      "1y": "1年",
+      "5y": "5年",
+      "10y": "10年"
+    },
+    "last_updated": "最後更新",
+    "inst": {
+      "title": "三大法人留倉（淨口數，近 30 天）",
+      "col_date": "日期",
+      "col_foreign": "外資",
+      "col_trust": "投信",
+      "col_dealer": "自營商",
+      "note": "淨口數 = 未平倉多單 − 空單口數；正值偏多、負值偏空。資料來源 FinMind。"
+    }
+  },
+  "macro": {
+    "title": "總體經濟 · Macro",
+    "subtitle": "5 層分析框架：總體 → 資金流 → 市場價格 → 籌碼情緒 → 地緣政治。\n          資料來自 Yahoo Finance",
+    "subtitle_fred_on": " + FRED（美國經濟基本面）",
+    "subtitle_fred_off": "；通膨/GDP/就業需 FRED API",
+    "loading_indicators": "載入 12 個指標…",
+    "section1_title": "🌍 1. 總體經濟 · 決定大方向",
+    "metric": {
+      "us10y": "美10Y公債",
+      "us5y": "美5Y公債",
+      "dxy": "美元指數",
+      "vix": "VIX 恐慌"
+    },
+    "fred_unavailable_list": "CPI / GDP / NFP / Fed Funds / 失業率",
+    "requires_prefix": "需設定 ",
+    "requires_env_mid": "（.env，",
+    "free_signup": "免費申請",
+    "paren_close": "）",
+    "logic_title": "📌 判斷邏輯",
+    "logic": {
+      "rate_hike": "升息",
+      "rate_hike_effect": "→ 股市壓力 / 黃金偏弱",
+      "rate_cut": "降息",
+      "rate_cut_effect": "→ 股市上漲 / 黃金上漲",
+      "inflation_up": "通膨上升",
+      "inflation_up_effect": "→ 黃金上漲",
+      "recession": "經濟衰退",
+      "recession_effect": "→ 防禦資產上漲"
+    },
+    "section2_title": "💵 2. 資金流 · 錢往哪裡跑",
+    "liquidity": {
+      "rate_intro": "利率 = 資金成本。10Y 公債殖利率",
+      "last_1y_prefix": "（近 1 年 ",
+      "last_1y_suffix": "）",
+      "bullet_high_rate": "利率高 → 錢回債券 → 股市 / 黃金壓力",
+      "bullet_low_rate": "利率低 → 錢流向股市 / 風險資產",
+      "bullet_strong_dxy": "DXY 強 → 資金回流美國 → 新興市場 / 黃金壓力"
+    },
+    "fx": {
+      "title_prefix": "💱 主要匯率（USD 對 / ",
+      "title_suffix": "）",
+      "note": "USD/TWD ↑ 利出口股（半導體/電子）；USD/JPY ↑ 對日股/亞洲債券壓力"
+    },
+    "section3_title": "📊 3. 市場價格 · Price Action",
+    "gold_perf_title": "黃金 GC（USD/oz）長期績效",
+    "cross": {
+      "title": "🔗 交叉關係（很重要）",
+      "dxy_up": "DXY ↑",
+      "dxy_up_effect": "→ 黃金 ↓",
+      "rate_up": "利率 ↑",
+      "rate_up_effect": "→ 科技股 ↓",
+      "risk_off_up": "避險情緒 ↑",
+      "risk_off_up_effect": "→ 黃金 ↑ BTC ↑",
+      "strong_econ": "經濟強",
+      "strong_econ_effect": "→ 股市 ↑"
+    },
+    "crypto": {
+      "title": "💎 3.5 加密貨幣 · Top 10",
+      "total_cap": "總市值 ",
+      "btc_dominance": "BTC 主導 ",
+      "eth_dominance": "ETH 主導 ",
+      "coins_suffix": " 個幣種"
+    },
+    "section4_title": "📈 4. 籌碼 / 情緒",
+    "vix": {
+      "label": "VIX 恐慌指數",
+      "extreme_fear": "🔴 高度恐慌 → 防禦",
+      "caution": "🟡 警戒",
+      "calm": "🟢 平靜（風險偏好）"
+    },
+    "yield_curve": {
+      "label": "10Y - 2Y 殖利率利差",
+      "fallback_note": "需 FRED API"
+    },
+    "pcr": {
+      "label": "台指期選擇權 PCR",
+      "fallback_note": "— TXO PCR"
+    },
+    "sentiment": {
+      "footnote": "PCR > 1.2 通常代表「過度恐慌」（反向買入訊號）；< 0.7「過度樂觀」（反向警戒）。\n          殖利率倒掛在歷史上 6-18 個月內常出現衰退。"
+    },
+    "section5_title": "🌐 5. 地緣政治 · 黑天鵝來源",
+    "geopolitics": {
+      "watch": "監測重點：戰爭（俄烏、中東）/ 美國選舉 / 制裁 / 石油供應鏈",
+      "jump_button": "前往「全球」頁查最新新聞 →"
+    },
+    "section6_title": "📅 6. 未來 30 天經濟事件 · Calendar",
+    "calendar": {
+      "count_suffix": " 筆",
+      "free_signup": "免費申請 →",
+      "col_datetime": "日期 / 時間",
+      "col_country": "國家",
+      "col_event": "事件",
+      "col_prev": "前值",
+      "col_estimate": "預期",
+      "col_actual": "公布",
+      "col_impact": "影響",
+      "showing_prefix": "顯示前 30 筆，共 ",
+      "footnote": "🔴 high / 🟡 medium / ⚪ low · 資料源 Finnhub · 已過濾掉德國各州、Prel 中間版本、節日噪音"
+    }
+  },
+  "fundamentals": {
+    "monthly_revenue_title": "📊 月營收（MOPS · 近 12 月）",
+    "col_month": "月份",
+    "col_revenue_100m": "營收（億）",
+    "col_mom": "MoM",
+    "col_yoy": "YoY",
+    "earnings_title": "📅 財報日（美股，Finnhub）",
+    "col_date": "日期",
+    "col_eps_estimate": "EPS 預期",
+    "col_eps_actual": "EPS 實際",
+    "col_rev_estimate": "營收 預期",
+    "col_rev_actual": "營收 實際",
+    "insider_title": "🏛️ 內部人交易 Form 4（SEC EDGAR · {company} CIK {cik}）",
+    "col_filing_date": "申報日",
+    "col_form": "表單",
+    "col_link": "連結",
+    "view_details": "看詳情 →",
+    "insider_note": "Form 4 = 內部人（CEO/CFO/Director/10% 持股人）2 個工作日內申報的買賣動向；CEO 大買通常是強烈看多訊號，連續賣出（非自動賣出計畫）是警訊。",
+    "recommendations_title": "👥 分析師評等（美股，Finnhub 近 4 季）",
+    "rating_summary": "強買 {strongBuy} · 買 {buy} · 持有 {hold} · 賣 {sell} · 強賣 {strongSell}（共 {total}）",
+    "rating_strong_buy": "強買 {n}",
+    "rating_buy": "買進 {n}",
+    "rating_hold": "持有 {n}",
+    "rating_sell": "賣出 {n}",
+    "rating_strong_sell": "強賣 {n}",
+    "metric_eps": "最新 EPS",
+    "unit_twd": " 元",
+    "metric_pe": "本益比 PE",
+    "metric_yield": "殖利率",
+    "metric_revenue_mom": "營收月增",
+    "metric_revenue_yoy": "營收年增"
+  },
+  "chip": {
+    "unit_lots": "張",
+    "cum_5d": "5日累計",
+    "foreign_holding_title": "🌏 外資持股比率（集保）",
+    "last_4w": "近 4 週",
+    "unit_pp": "pp",
+    "margin_short_title": "💳 融資融券餘額（{date}）",
+    "margin_balance_label": "融資（散戶買進）",
+    "daily_change": "日變化",
+    "short_balance_label": "融券（散戶放空）",
+    "sec_lend_title": "📉 借券賣出（外資放空，{date}）",
+    "fee_rate": "手續費率",
+    "sec_lend_hint": "借券量 ↑ 通常代表機構建立空單；費率 ↑ 代表借不到（軋空風險高）",
+    "row_foreign": "外資",
+    "row_trust": "投信",
+    "row_dealer": "自營商",
+    "three_total": "三大合計"
+  },
+  "outlook": {
+    "bias": {
+      "bullish": "偏多",
+      "bearish": "偏空",
+      "neutral": "中性"
+    },
+    "summary_line": "綜合研判 · 收盤 {close} · {trend}",
+    "expected_heading": "預期（{horizon_days} 個交易日，依歷史回測推估）",
+    "based_on": "基於",
+    "win_rate_label": "歷史勝率",
+    "avg_return_label": "平均報酬",
+    "target_label": "目標 ~",
+    "range_label": "歷史區間",
+    "low_sample_warning": "⚠ 樣本數較少（{sample_count} 次），參考性較低",
+    "no_expected_fallback": "目前無明顯回測訊號可推估預期；可參考 支撐 {support}、壓力 {resistance}。",
+    "support_label": "支撐",
+    "resistance_label": "壓力",
+    "rationale_heading": "研判依據",
+    "no_signals": "無明顯訊號"
+  },
+  "backtest": {
+    "fallback_signal": {
+      "ma_cross": "MA20×MA60 黃金交叉",
+      "ma_death": "MA20×MA60 死亡交叉"
+    },
+    "triggered_prefix": "共觸發",
+    "triggered_suffix": "次",
+    "low_sample_warning": "樣本不足",
+    "download_pine": "下載 Pine",
+    "col_hold": "持有",
+    "col_win_rate": "勝率",
+    "col_avg_return": "平均報酬",
+    "col_max_gain": "最大獲利",
+    "col_max_loss": "最大虧損",
+    "hold_days_unit": "日",
+    "recent_triggers": "最近觸發：",
+    "date_separator": "、"
+  },
+  "global": {
+    "title": "全球盤勢 · 地緣動態",
+    "subtitle": "亞、歐、美三大市場 + 地緣政治關鍵字 · 來源 Google News · 後端 30 分鐘快取",
+    "last_fetched": "· 最後抓取 {time}",
+    "item_count": "{count} 則",
+    "no_recent_news": "暫無近 36 小時新聞",
+    "time_ago": {
+      "minutes": "{n} 分鐘前",
+      "hours": "{n} 小時前",
+      "days": "{n} 天前"
+    }
+  },
+  "watchlist": {
+    "indicator": {
+      "macd_hist": "MACD 柱狀",
+      "close": "收盤價"
+    },
+    "remove_confirm": "移除 {symbol}（連同所有條件）？",
+    "title": "Watchlist · 關注清單",
+    "description": "記錄關注的股票與條件，重新整理頁面即評估目前狀態（不會主動推播）。未來 Go alert engine 接這張表做 per-tick 推送。",
+    "reevaluate": "重新評估",
+    "triggered_banner_suffix": "個條件目前觸發中",
+    "add_section_title": "加入關注",
+    "symbol_placeholder": "股票代碼，如 2330",
+    "watching_count": "關注中（{count}）",
+    "no_conditions": "尚無條件",
+    "current_value_label": "目前 =",
+    "add_condition_section_title": "新增條件",
+    "code_placeholder": "代碼",
+    "add_condition_button": "新增條件",
+    "condition_examples": "例：2330 RSI < 30（超賣可進）/ 2454 KD K > 80（高檔警戒）/ 0050 收盤價 > 150",
+    "empty_state": "尚未關注任何股票。輸入代碼開始追蹤 →"
+  },
+  "compare": {
+    "range": {
+      "1m": "1月",
+      "3m": "3月",
+      "6m": "6月",
+      "1y": "1年",
+      "3y": "3年",
+      "5y": "5年"
+    },
+    "baseline": "基準",
+    "title": "股票對比 · Compare",
+    "subtitle": "多支股票/商品 normalize 到 100 疊圖，看相對強弱。台股代碼或國際商品（GC/SPX/BTC...）均可。最多 6 條。",
+    "input_placeholder": "輸入代碼，如 2330 / 2454 / 0050 / GC / SPX / BTC",
+    "footnote": "所有 series 以區間第一根 K 線為 100 基準，看相對強弱。例如 2330 100→130 vs 2454 100→110 表示 2330 在這段期間漲贏 2454 20%。"
+  },
+  "technical": {
+    "section": {
+      "ma": "均線",
+      "indicators": "指標"
+    },
+    "label": {
+      "rsi": "RSI(14)",
+      "macd": "MACD",
+      "macd_signal": "訊號",
+      "kd": "KD",
+      "kd_k": "K",
+      "kd_d": "D",
+      "bb_upper": "布林上",
+      "bb_lower": "布林下",
+      "support": "支撐",
+      "resistance": "壓力"
+    },
+    "trend": {
+      "bullish": "多頭排列",
+      "bearish": "空頭排列",
+      "consolidating": "整理中",
+      "insufficient": "資料不足"
+    }
+  },
+  "news": {
+    "empty": "目前無相關新聞",
+    "major_badge": "重大"
+  },
+  "chart": {
+    "prev_close": "昨收",
+    "marker": {
+      "ma_golden": "MA金叉",
+      "ma_death": "MA死叉",
+      "macd_golden": "MACD↑",
+      "macd_death": "MACD↓",
+      "kdj_low": "KDJ低",
+      "kdj_high": "KDJ高"
+    },
+    "rsi_overbought": "超買",
+    "rsi_oversold": "超賣"
+  },
+  "quote": {
+    "live": "即時",
+    "last": "成交",
+    "prev_close": "昨收",
+    "open": "開",
+    "high": "高",
+    "low": "低",
+    "avg": "均價",
+    "volume": "量",
+    "bid": "買",
+    "ask": "賣",
+    "five_levels": "五檔報價"
   }
 }

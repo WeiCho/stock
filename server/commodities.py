@@ -44,7 +44,7 @@ SUPPORTED: dict[str, dict] = {
     "CL":  {"label": "原油WTI",  "source": "yahoo", "yahoo_id": "CL=F",      "currency": "USD"},
     "SI":  {"label": "白銀",     "source": "yahoo", "yahoo_id": "SI=F",      "currency": "USD"},
     "HG":  {"label": "銅",       "source": "yahoo", "yahoo_id": "HG=F",      "currency": "USD"},
-    "XAUUSD": {"label": "黃金現貨", "source": "yahoo", "yahoo_id": "XAUUSD=X", "currency": "USD"},
+    # Yahoo 已停掉 XAUUSD=X spot forex (2025/26 起 404)，GC=F 已涵蓋黃金 → 移除避免 503
     # 總體經濟指標（Yahoo Finance）
     "DXY":   {"label": "美元指數",    "source": "yahoo", "yahoo_id": "DX-Y.NYB", "currency": "INDEX"},
     "SPX":   {"label": "S&P 500",     "source": "yahoo", "yahoo_id": "^GSPC",    "currency": "USD"},
@@ -228,8 +228,11 @@ def fetch_history(symbol: str, days: int = 365, tf: str = "1d") -> dict:
         bars, meta = _fetch_yahoo_chart(info["yahoo_id"], days)
         out["currency"] = meta.get("currency") or info.get("currency", "USD")
         out["regularMarketPrice"] = meta.get("regularMarketPrice")
-        if meta.get("chartPreviousClose") is not None:
-            out["previousClose"] = meta.get("chartPreviousClose")
+        # NB: 用 meta.previousClose（個股有；指數/期貨 Yahoo 不回，是 None）；
+        # 不要用 meta.chartPreviousClose — 那是「chart range 起點前一根」的價格，
+        # 對 range=1y 來說那是 1 年前的價，會讓「日內變化」誤標成 1y 變化。
+        if meta.get("previousClose") is not None:
+            out["previousClose"] = meta.get("previousClose")
 
     # 重採樣（3d / 5d / 1w / 2w / 3w / 1mo）
     if tf not in ("1d", None) and bars:
@@ -242,7 +245,7 @@ def fetch_history(symbol: str, days: int = 365, tf: str = "1d") -> dict:
         bars = bars.to_dict(orient="records")
 
     out["data"] = bars
-    # 日線模式才用前一根當 previousClose（intraday 已單獨處理）
+    # 指數沒 meta.previousClose → fallback 用倒數第二根 bar.close（前一根 = 昨天）
     if "previousClose" not in out and len(bars) >= 2:
         out["previousClose"] = bars[-2]["close"]
 

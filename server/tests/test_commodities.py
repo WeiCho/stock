@@ -14,7 +14,8 @@ class TestSupportedSymbols:
             assert commodities.SUPPORTED[s]["source"] == "finmind"
 
     def test_has_intl_commodities(self):
-        for s in ('GC', 'CL', 'SI', 'HG', 'XAUUSD'):
+        # XAUUSD 已移除（Yahoo XAUUSD=X 2026 起 404；GC=F 已涵蓋黃金）
+        for s in ('GC', 'CL', 'SI', 'HG'):
             assert s in commodities.SUPPORTED
             assert commodities.SUPPORTED[s]["source"] == "yahoo"
 
