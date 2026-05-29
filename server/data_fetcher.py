@@ -302,7 +302,9 @@ def fetch_daily_institutional_bulk(target_date: Optional[date] = None) -> int:
     if target_date is None:
         target_date = date.today()
 
-    url = f"{TWSE_BASE}/fund/T86"
+    # TWSE 已將 T86 遷到 /rwd/zh/ 路徑；舊的 /fund/T86 現在回空 / 「沒有符合條件的資料」。
+    # 欄位順序不變（row[0]代號、[4]外陸資淨、[7]外資自營商淨、[10]投信淨、[11]自營商合計淨）。
+    url = f"{TWSE_BASE}/rwd/zh/fund/T86"
     params = {"response": "json", "date": target_date.strftime("%Y%m%d"), "selectType": "ALL"}
 
     try:
