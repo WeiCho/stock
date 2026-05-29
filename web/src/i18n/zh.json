@@ -463,5 +463,11 @@
     "bid": "買",
     "ask": "賣",
     "five_levels": "五檔報價"
+  },
+  "valuation": {
+    "title": "估值篩選 · TWSE 官方",
+    "low_per": "低本益比 Top",
+    "high_yield": "高殖利率 Top",
+    "per": "本益比"
   }
 }

@@ -38,6 +38,7 @@ import pine_exporter
 import sec
 import taifex
 import technical
+import twse_openapi
 import watchlist
 from db import (
     IndexData, Institutional, StockName, StockIndustry,
@@ -617,6 +618,13 @@ def market_movers_rank(top: int = 10):
     return market_movers.market_movers(top_n=top)
 
 
+@app.get("/market/valuation")
+def market_valuation(top: int = 10):
+    """全市場估值篩選（TWSE OpenAPI 官方，免費、免 key、免額度）：低本益比 + 高殖利率 各前 N。
+    僅上市；最近一交易日快照。"""
+    return twse_openapi.valuation_screen(top_n=top)
+
+
 @app.get("/market/futures/pcr")
 def futures_pcr(days: int = 30):
     """台指選擇權 Put/Call Ratio（成交量比 + 未平倉比）。資料源 FinMind。"""
@@ -662,8 +670,20 @@ def stock_foreign_holding(symbol: str, weeks: int = 26):
 
 @app.get("/stock/{symbol}/margin-short")
 def stock_margin_short(symbol: str, days: int = 30):
-    """融資融券餘額（每日）。融資=散戶借錢買；融券=散戶放空。"""
-    return fundamentals_extra.margin_short(symbol, days_back=days)
+    """融資融券餘額（每日序列走 FinMind）。另附 TWSE 官方最新一日 `official_latest`
+    （免 FinMind 額度）。融資=散戶借錢買；融券=散戶放空。"""
+    result = fundamentals_extra.margin_short(symbol, days_back=days)
+    if isinstance(result, dict):
+        official = twse_openapi.margin_for(symbol)
+        if official:
+            result["official_latest"] = {**official, "source": "TWSE OpenAPI"}
+    return result
+
+
+@app.get("/stock/{symbol}/valuation")
+def stock_valuation(symbol: str):
+    """個股本益比 / 股價淨值比 / 殖利率（TWSE OpenAPI 官方，免費免額度；僅上市）。"""
+    return twse_openapi.valuation_for(symbol)
 
 
 @app.get("/stock/{symbol}/securities-lending")

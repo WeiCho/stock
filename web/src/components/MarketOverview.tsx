@@ -200,6 +200,14 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
   const liveSyms = (movers?.by_value ?? []).slice(0, 5).map(m => m.symbol)
   const liveQuotes = useLiveQuotes(liveSyms)
 
+  // 估值篩選（TWSE OpenAPI 官方，免 key / 免額度）— 低本益比 / 高殖利率
+  const [valuation, setValuation] = useState<Awaited<ReturnType<typeof api.valuation>> | null>(null)
+  useEffect(() => {
+    let active = true
+    api.valuation(5).then(d => { if (active) setValuation(d) }).catch(() => {})
+    return () => { active = false }
+  }, [])
+
   const data = index?.data || []
   const latest = data.at(-1)
   const prev = data.at(-2)
@@ -371,6 +379,43 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
                     <td className="text-slate-400 truncate max-w-[7rem]">{m.name}</td>
                     <td className="text-right text-green-400 font-mono">{m.change_pct}%</td>
                     <td className="text-right text-slate-500 font-mono">{m.close}</td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 估值篩選（TWSE OpenAPI 官方，免費）— 低本益比 / 高殖利率 */}
+      {valuation?.available && ((valuation.low_per?.length ?? 0) > 0 || (valuation.high_yield?.length ?? 0) > 0) && (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500 uppercase">{t('valuation.title')} · {valuation.date}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div>
+              <p className="text-slate-500 uppercase mb-1">{t('valuation.low_per')}</p>
+              <table className="w-full"><tbody>
+                {valuation.low_per?.map(m => (
+                  <tr key={m.symbol} onClick={() => onSelectStock?.(m.symbol)}
+                    className="border-b border-slate-800 hover:bg-slate-800/60 cursor-pointer">
+                    <td className="py-1 text-blue-300 font-mono">{m.symbol}</td>
+                    <td className="text-slate-400 truncate max-w-[6rem]">{m.name}</td>
+                    <td className="text-right text-slate-200 font-mono">{t('valuation.per')} {m.per}</td>
+                    <td className="text-right text-slate-500 font-mono">{m.dividend_yield != null ? `${m.dividend_yield}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+            <div>
+              <p className="text-slate-500 uppercase mb-1">{t('valuation.high_yield')}</p>
+              <table className="w-full"><tbody>
+                {valuation.high_yield?.map(m => (
+                  <tr key={m.symbol} onClick={() => onSelectStock?.(m.symbol)}
+                    className="border-b border-slate-800 hover:bg-slate-800/60 cursor-pointer">
+                    <td className="py-1 text-blue-300 font-mono">{m.symbol}</td>
+                    <td className="text-slate-400 truncate max-w-[6rem]">{m.name}</td>
+                    <td className="text-right text-red-300 font-mono">{m.dividend_yield}%</td>
+                    <td className="text-right text-slate-500 font-mono">{m.per != null ? `${t('valuation.per')} ${m.per}` : '—'}</td>
                   </tr>
                 ))}
               </tbody></table>

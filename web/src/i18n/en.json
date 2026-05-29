@@ -463,5 +463,11 @@
     "bid": "Bid",
     "ask": "Ask",
     "five_levels": "Order Book"
+  },
+  "valuation": {
+    "title": "Valuation · TWSE official",
+    "low_per": "Lowest P/E",
+    "high_yield": "Highest Yield",
+    "per": "P/E"
   }
 }

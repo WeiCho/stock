@@ -98,6 +98,16 @@ export const api = {
       losers?: { symbol: string; name: string; close: number; change_pct: number }[]
       by_volume?: { symbol: string; name: string; close: number; change_pct: number; volume: number }[]
     }>('/market/movers', { top }),
+  // TWSE OpenAPI 官方估值（免 key / 免額度）
+  valuation: (top = 10) =>
+    get<{
+      available: boolean
+      date?: string
+      low_per?: { symbol: string; name: string; per: number; pbr?: number | null; dividend_yield?: number | null }[]
+      high_yield?: { symbol: string; name: string; dividend_yield: number; per?: number | null; pbr?: number | null }[]
+    }>('/market/valuation', { top }),
+  stockValuation: (sym: string) =>
+    get<{ available: boolean; symbol: string; date?: string; name?: string; per?: number | null; pbr?: number | null; dividend_yield?: number | null }>(`/stock/${sym}/valuation`),
   // SEC EDGAR Form 4
   insider: (sym: string, limit = 20) =>
     get<{
