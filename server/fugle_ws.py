@@ -59,7 +59,8 @@ class QuoteHub:
     def __init__(self):
         self._clients: set[_Client] = set()
         self._desired: set[str] = set()     # union(clients) 截斷到 MAX_SUBS
-        self._subscribed: set[str] = set()  # 已對上游送出 subscribe 的 symbol
+        self._subscribed: set[str] = set()  # 已確認訂閱（收到 subscribed ack）的 symbol
+        self._pending: set[str] = set()     # 已送出 subscribe、等 ack 中的 symbol
         self._sub_ids: dict[str, str] = {}  # symbol → Fugle 訂閱 id（unsubscribe 要用）
         self._latest: dict[str, dict] = {}  # symbol → 最新整形報價（給新 client seed）
         self._ws = None
@@ -91,6 +92,15 @@ class QuoteHub:
             log.warning("Fugle WS 訂閱數 %d 超過免費上限 %d，只訂閱 %s（其餘略過）",
                         total, MAX_SUBS, sorted(desired))
         self._desired = desired
+        if not self._clients:
+            # 沒有任何瀏覽器 client 了 → 主動關上游連線，釋放 Fugle 免費方案唯一的連線額度
+            # （ping keepalive 會讓閒置 socket 不會自己 timeout）；關閉後 _run 會接著 break。
+            if self._ws:
+                try:
+                    await self._ws.close()
+                except Exception:
+                    pass
+            return
         await self._apply_desired()
 
     # ── 上游 Fugle 連線 ──
@@ -101,8 +111,9 @@ class QuoteHub:
     async def _apply_desired(self) -> None:
         if not (self._ws and self._authed):
             return  # 尚未連上/認證 → authenticated 時會整批補送
-        add = self._desired - self._subscribed
-        rm = self._subscribed - self._desired
+        active = self._subscribed | self._pending  # 已訂閱或等 ack 中的，不重複訂
+        add = self._desired - active
+        rm = self._subscribed - self._desired      # 只退「已確認」的；pending 的退訂在收到 ack 時對帳
         try:
             for s in sorted(rm):
                 sid = self._sub_ids.pop(s, None)
@@ -112,7 +123,7 @@ class QuoteHub:
             for s in sorted(add):
                 await self._ws.send(json.dumps(
                     {"event": "subscribe", "data": {"channel": CHANNEL, "symbol": s}}))
-                self._subscribed.add(s)
+                self._pending.add(s)  # 等 subscribed ack（拿到 id）才算數，之後才退得掉
                 asyncio.create_task(self._seed(s))  # REST 補最後一盤，盤後/週末也先有畫面
         except Exception as e:
             log.warning("Fugle WS 套用訂閱失敗：%s", e)
@@ -132,14 +143,16 @@ class QuoteHub:
         while self._clients:
             self._authed = False
             self._subscribed = set()
+            self._pending = set()
             self._sub_ids = {}
             try:
                 async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20) as ws:
                     self._ws = ws
                     await ws.send(json.dumps({"event": "auth", "data": {"apikey": key}}))
-                    backoff = 1
                     async for raw in ws:
                         await self._handle(raw)
+                        if self._authed:
+                            backoff = 1  # 認證成功後才重置 backoff，避免壞 key 造成 1s 重連風暴
             except Exception as e:
                 log.warning("Fugle WS 連線中斷：%s（%ds 後重連）", e, backoff)
             finally:
@@ -160,13 +173,23 @@ class QuoteHub:
         if ev == "authenticated":
             self._authed = True
             self._subscribed = set()
+            self._pending = set()
             self._sub_ids = {}
             await self._apply_desired()
         elif ev == "subscribed":
             d = msg.get("data") or {}
             sym, sid = d.get("symbol"), d.get("id")
             if sym and sid:
-                self._sub_ids[sym] = sid
+                self._pending.discard(sym)
+                if sym in self._desired:
+                    self._sub_ids[sym] = sid
+                    self._subscribed.add(sym)
+                elif self._ws:
+                    # ack 回來時已經不需要了 → 立刻用剛拿到的 id 退訂，避免孤兒訂閱佔額度
+                    try:
+                        await self._ws.send(json.dumps({"event": "unsubscribe", "data": {"id": sid}}))
+                    except Exception:
+                        pass
         elif ev in ("data", "snapshot"):
             # snapshot = 訂閱當下的即時快照；data = 後續逐筆更新。兩者 data 結構一致。
             d = msg.get("data") or {}

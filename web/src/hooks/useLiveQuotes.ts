@@ -32,22 +32,48 @@ export function useLiveQuotes(symbols: string[]): Record<string, LiveQuote> {
       setQuotes({})
       return
     }
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/api/ws/quotes`)
-    ws.onopen = () => ws.send(JSON.stringify({ action: 'subscribe', symbols: capped }))
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        if (msg.event === 'quote' && msg.quote?.symbol) {
-          setQuotes(prev => ({ ...prev, [msg.quote.symbol]: msg.quote }))
-        }
-      } catch {
-        /* ignore malformed frame */
+    // 切換訂閱清單時，只留下仍訂閱的 symbol（避免 record 無限長大 / 殘留舊列的報價）
+    setQuotes(prev => {
+      const next: Record<string, LiveQuote> = {}
+      for (const s of capped) if (prev[s]) next[s] = prev[s]
+      return next
+    })
+
+    let ws: WebSocket | null = null
+    let closed = false
+    let backoff = 1000
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const connect = () => {
+      if (closed) return
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+      ws = new WebSocket(`${proto}://${location.host}/api/ws/quotes`)
+      ws.onopen = () => ws?.send(JSON.stringify({ action: 'subscribe', symbols: capped }))
+      ws.onmessage = (e) => {
+        backoff = 1000 // 有收到資料 = 連線健康，重置退避
+        try {
+          const msg = JSON.parse(e.data)
+          if (msg.event === 'quote' && msg.quote?.symbol) {
+            setQuotes(prev => ({ ...prev, [msg.quote.symbol]: msg.quote }))
+          }
+        } catch { /* ignore malformed frame */ }
+      }
+      ws.onerror = () => { try { ws?.close() } catch { /* noop */ } }
+      ws.onclose = () => {
+        if (closed) return
+        // 斷線（睡眠/網路抖動/伺服器重啟）自動重連：指數退避 1s→15s，重連後 onopen 會重送 subscribe
+        timer = setTimeout(connect, backoff)
+        backoff = Math.min(backoff * 2, 15000)
       }
     }
-    ws.onerror = () => { /* silent — UI falls back to static values */ }
-    return () => { try { ws.close() } catch { /* noop */ } }
-    // 只在訂閱清單（key）改變時重連
+    connect()
+
+    return () => {
+      closed = true
+      if (timer) clearTimeout(timer)
+      try { ws?.close() } catch { /* noop */ }
+    }
+    // 只在訂閱清單（key）改變時重建連線
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
