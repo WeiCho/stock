@@ -469,5 +469,10 @@
     "low_per": "Lowest P/E",
     "high_yield": "Highest Yield",
     "per": "P/E"
+  },
+  "screen": {
+    "title": "📈 Bullish-setup screen · multi-factor",
+    "exclude_ob": "Exclude RSI overbought (earlier setups)",
+    "disclaimer": "Research signals, not investment advice; EOD data, no backtest, past ≠ future."
   }
 }

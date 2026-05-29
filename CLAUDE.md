@@ -40,7 +40,7 @@ taiwan-stock/
 ├── requirements-dev.txt   # 測試 deps（pytest）
 ├── stocks.db              # SQLite（自動建立，勿 commit）
 ├── pine_output/           # 生成的 .pine 檔（勿 commit）
-├── server/                # FastAPI 後端（24 個模組）
+├── server/                # FastAPI 後端（25 個模組）
 │   ├── main.py            # 49 routes，top-level imports（無 inline）+ 啟動 load_dotenv()
 │   ├── db.py              # SQLAlchemy + SQLite init（10 張表）
 │   ├── data_fetcher.py    # 三層下載策略（FinMind 主力 + TWSE/TPEx 備援；台股 + 美股分流）
@@ -76,16 +76,17 @@ taiwan-stock/
 │   ├── finnhub.py         # 經濟事件日曆 / 美股財報日 / 分析師評等 / 內線 / IPO（需 FINNHUB_API_KEY）
 │   ├── taifex.py          # TXO Put/Call Ratio（成交量 + OI，FinMind TaiwanOptionDaily）
 │   ├── us_stocks.py       # 美股支援：ticker 偵測 + Yahoo v8 → 寫進共用 daily_price + Finnhub /search
+│   ├── screen.py          # 偏多候選多因子掃描（動能 + 籌碼連買 + 技術 + 估值；可排除 RSI 超買）
 │   ├── twse_openapi.py    # TWSE 官方 OpenAPI：全市場估值(PER/PBR/殖利率) + 融資融券（免 key/額度）
 │   ├── watchlist.py       # 觀察清單 + 警示條件 CRUD + evaluate_all() 當前狀態評估
 │   ├── pine_exporter.py   # 11 個訊號的 Pine v5 模板
-│   └── tests/             # pytest 71 個（backtest / resample / fugle filter+quote / fugle_ws / twse_openapi / commodities / fred）
+│   └── tests/             # pytest 76 個（backtest / resample / fugle / fugle_ws / twse_openapi / screen / commodities / fred）
 └── web/                   # React 19 + Vite + TS strict + Tailwind + lightweight-charts v5 + react-i18next
     ├── src/
     │   ├── App.tsx        # 7 views: market / global / futures / macro / compare / watchlist / stock
     │   ├── api.ts         # 單一 api 物件，generic get<T>() + ~30 endpoint wrappers
     │   ├── types.ts       # 10+ response types
-    │   ├── i18n/          # index.ts（react-i18next init + toggleLang）+ zh.json / en.json（各 369 keys）
+    │   ├── i18n/          # index.ts（react-i18next init + toggleLang）+ zh.json / en.json（各 372 keys）
     │   ├── indicators.ts  # JS 端 RSI / KDJ / MACD（給副圖用）
     │   ├── indicators.test.ts  # vitest 10 個
     │   ├── lib/charts.ts  # toTime / isTradingHours / SESSION_MINUTES
@@ -158,7 +159,7 @@ cd web; npm run dev
 cd web && npm run dev   # → http://localhost:5173
 ```
 
-## API 路由總覽（51 個 HTTP + 1 WebSocket）
+## API 路由總覽（52 個 HTTP + 1 WebSocket）
 
 > 即時報價 WebSocket：`WS /ws/quotes` — 瀏覽器送 `{action:'subscribe', symbols:[≤5]}`，後端維護單一上游 Fugle 連線（aggregates channel）廣播多檔即時報價（自選清單 / movers 各列用；Fugle 免費上限 1 連線 / 5 訂閱）。
 
@@ -448,7 +449,7 @@ cd web && npm run dev   # → http://localhost:5173
 7. **個股**（symbol 設定後，台股 + 美股）— 即時報價（Fugle 五檔，每 3 秒）+ 7 時間框架 K 線 + 6 個 tab（綜合研判/技術/籌碼/回測/基本面/新聞）
 
 ### i18n（react-i18next）
-- 兩本字典 `web/src/i18n/zh.json`（zh-TW，預設）+ `en.json`，各 369 keys（zh/en parity）
+- 兩本字典 `web/src/i18n/zh.json`（zh-TW，預設）+ `en.json`，各 372 keys（zh/en parity）
 - localStorage 持久化語言切換（key = `lang`），`toggleLang()` 同步 `document.documentElement.lang`（zh → `zh-Hant`）
 - 全部 14 個 component + App.tsx 透過 `useTranslation()` / `t()` 接線；ErrorBoundary 走 `withTranslation` HOC（class component）
 
@@ -491,7 +492,7 @@ cd web; npm test
 ```
 ```bash
 ./.venv/bin/pip install -r requirements-dev.txt
-./.venv/bin/python -m pytest server/tests -v   # 71 tests
+./.venv/bin/python -m pytest server/tests -v   # 76 tests
 cd web && npm test                              # vitest 10 tests
 ```
 
@@ -513,3 +514,4 @@ cd web && npm test                              # vitest 10 tests
 - [x] Phase 11：Fugle 個股/ETF 即時報價（含五檔，每 3 秒輪詢 + 交易時段 gate）+ SEC User-Agent 改 env + market_movers 去重 + 後端字串 i18n（technical 訊號 / outlook 研判因子+免責，英文模式 100% 乾淨，後端發 code/key+params）+ pytest 55 + 49 routes + 364 i18n keys
 - [x] Phase 12：多檔即時報價 WebSocket streamer（後端單一 Fugle 連線 hub + aggregates → `WS /ws/quotes` 廣播；自選清單 / movers 成交額 Top 5 各列即時價＋漲跌，免費上限 5 檔）+ websockets dep + pytest 59 + 365 i18n keys
 - [x] Phase 13：TWSE OpenAPI 官方整合（免 key/免額度）— `twse_openapi.py` 全市場估值篩選 BWIBBU（低本益比/高殖利率 → `/market/valuation` + 大盤估值面板）+ 個股 PER/PBR/殖利率（`/stock/{symbol}/valuation`）+ margin-short 附 TWSE 官方最新；pytest 71 + 51 routes + 369 i18n keys
+- [x] Phase 14：偏多候選多因子掃描 `screen.py`（動能+籌碼連買+技術+估值收斂，輕量訊號免回測）→ `GET /market/screen`（可調濾網，例如排除 RSI 超買找較早設定）+ 大盤頁「偏多候選」面板；pytest 76 + 52 routes + 372 i18n keys。研究訊號，非投資建議

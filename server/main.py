@@ -35,6 +35,7 @@ import market_movers
 import news_fundamental as nf
 import outlook
 import pine_exporter
+import screen as screen_module
 import sec
 import taifex
 import technical
@@ -623,6 +624,14 @@ def market_valuation(top: int = 10):
     """全市場估值篩選（TWSE OpenAPI 官方，免費、免 key、免額度）：低本益比 + 高殖利率 各前 N。
     僅上市；最近一交易日快照。"""
     return twse_openapi.valuation_screen(top_n=top)
+
+
+@app.get("/market/screen")
+def market_screen(exclude_overbought: bool = True, min_foreign_days: int = 3, top: int = 15):
+    """偏多候選多因子掃描：動能(放量/漲幅) + 籌碼(外資連買) + 技術(均線/訊號) + 估值。
+    exclude_overbought=True 排除 RSI 過熱者（找「尚未噴出」的較早設定）。研究訊號，非投資建議。"""
+    return screen_module.bullish_screen(
+        exclude_overbought=exclude_overbought, min_foreign_days=min_foreign_days, top=top)
 
 
 @app.get("/market/futures/pcr")

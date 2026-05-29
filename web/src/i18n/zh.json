@@ -469,5 +469,10 @@
     "low_per": "低本益比 Top",
     "high_yield": "高殖利率 Top",
     "per": "本益比"
+  },
+  "screen": {
+    "title": "📈 偏多候選掃描 · 多因子",
+    "exclude_ob": "排除 RSI 超買（找較早設定）",
+    "disclaimer": "研究訊號，非投資建議；EOD 資料、未跑回測，過去不代表未來。"
   }
 }
