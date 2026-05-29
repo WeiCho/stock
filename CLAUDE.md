@@ -40,7 +40,7 @@ taiwan-stock/
 ├── requirements-dev.txt   # 測試 deps（pytest）
 ├── stocks.db              # SQLite（自動建立，勿 commit）
 ├── pine_output/           # 生成的 .pine 檔（勿 commit）
-├── server/                # FastAPI 後端（22 個模組）
+├── server/                # FastAPI 後端（23 個模組）
 │   ├── main.py            # 49 routes，top-level imports（無 inline）+ 啟動 load_dotenv()
 │   ├── db.py              # SQLAlchemy + SQLite init（10 張表）
 │   ├── data_fetcher.py    # 三層下載策略（FinMind 主力 + TWSE/TPEx 備援；台股 + 美股分流）
@@ -65,7 +65,8 @@ taiwan-stock/
                             # BacktestPanel / FundamentalsPanel / NewsPanel / ErrorBoundary
 │   ├── news_fundamental.py# 個股新聞 + 全球新聞 + 基本面
 │   ├── fundamentals_extra.py # 進階台股基本面（月營收 MoM/YoY、外資持股、融資融券、借券；FinMind）
-│   ├── fugle.py           # 盤中即時 + 大單偵測（需 FUGLE_API_KEY）
+│   ├── fugle.py           # 盤中即時 + 大單偵測 + 即時報價快照（需 FUGLE_API_KEY）
+│   ├── fugle_ws.py        # 多檔即時報價 WS hub（單一上游 Fugle 連線 + aggregates，廣播給瀏覽器）
 │   ├── commodities.py     # 期貨 + 國際商品 + 總經市場面（FinMind + Yahoo Finance）
 │   ├── fred.py            # 美國經濟指標（CPI/GDP/NFP/失業率/Fed Funds，需 FRED_API_KEY）
 │   ├── crypto.py          # CoinGecko 前 10 大 + 全球統計（BTC/ETH dominance），無需 key
@@ -77,13 +78,13 @@ taiwan-stock/
 │   ├── us_stocks.py       # 美股支援：ticker 偵測 + Yahoo v8 → 寫進共用 daily_price + Finnhub /search
 │   ├── watchlist.py       # 觀察清單 + 警示條件 CRUD + evaluate_all() 當前狀態評估
 │   ├── pine_exporter.py   # 11 個訊號的 Pine v5 模板
-│   └── tests/             # pytest 55 個（backtest masks / resample / fugle filter + quote / commodities / fred）
+│   └── tests/             # pytest 59 個（backtest / resample / fugle filter+quote / fugle_ws cap+filter / commodities / fred）
 └── web/                   # React 19 + Vite + TS strict + Tailwind + lightweight-charts v5 + react-i18next
     ├── src/
     │   ├── App.tsx        # 7 views: market / global / futures / macro / compare / watchlist / stock
     │   ├── api.ts         # 單一 api 物件，generic get<T>() + ~30 endpoint wrappers
     │   ├── types.ts       # 10+ response types
-    │   ├── i18n/          # index.ts（react-i18next init + toggleLang）+ zh.json / en.json（各 364 keys）
+    │   ├── i18n/          # index.ts（react-i18next init + toggleLang）+ zh.json / en.json（各 365 keys）
     │   ├── indicators.ts  # JS 端 RSI / KDJ / MACD（給副圖用）
     │   ├── indicators.test.ts  # vitest 10 個
     │   ├── lib/charts.ts  # toTime / isTradingHours / SESSION_MINUTES
@@ -156,7 +157,9 @@ cd web; npm run dev
 cd web && npm run dev   # → http://localhost:5173
 ```
 
-## API 路由總覽（49 個）
+## API 路由總覽（49 個 HTTP + 1 WebSocket）
+
+> 即時報價 WebSocket：`WS /ws/quotes` — 瀏覽器送 `{action:'subscribe', symbols:[≤5]}`，後端維護單一上游 Fugle 連線（aggregates channel）廣播多檔即時報價（自選清單 / movers 各列用；Fugle 免費上限 1 連線 / 5 訂閱）。
 
 ### 個股（台股 + 美股）
 | Method | Path                                 | 說明                                                    |
@@ -405,6 +408,11 @@ cd web && npm run dev   # → http://localhost:5173
 - `scan_big_orders()` — async parallel 大單偵測，排除 serial 99999999 + hm in (900, 1325)
 - 所有失敗 path 都 `log.warning(...)` 含 HTTP 狀態碼 + body
 
+### fugle_ws.py（新）
+- 多檔即時報價 hub：後端維護「單一」上游 Fugle WS（aggregates channel），訂閱目前需要的 ≤5 檔（免費方案上限 1 連線 / 5 訂閱），廣播給所有瀏覽器端 `/ws/quotes` client。同一時間通常只有一個 view 在跑，union 多半 ≤5；超過 5 截斷並 log（不靜默）
+- subscribe 帶 symbol、unsubscribe 認 Fugle 回的訂閱 **id**；`snapshot`（訂閱當下）與 `data`（盤中更新）兩種 event 同樣整形（重用 `fugle._shape_quote`，前後端報價結構一致）；新訂閱時用 REST 補一筆最後一盤，盤後/週末也先有畫面。美股 ticker（字母開頭）自動過濾不佔額度
+- 前端 `useLiveQuotes(symbols)` hook：MarketOverview 成交額 Top 5 + WatchlistPanel 前 5 檔各列即時價＋漲跌（綠點脈動）
+
 ## 前端架構
 
 ### View 切換（7 個）
@@ -417,7 +425,7 @@ cd web && npm run dev   # → http://localhost:5173
 7. **個股**（symbol 設定後，台股 + 美股）— 即時報價（Fugle 五檔，每 3 秒）+ 7 時間框架 K 線 + 6 個 tab（綜合研判/技術/籌碼/回測/基本面/新聞）
 
 ### i18n（react-i18next）
-- 兩本字典 `web/src/i18n/zh.json`（zh-TW，預設）+ `en.json`，各 364 keys（zh/en parity）
+- 兩本字典 `web/src/i18n/zh.json`（zh-TW，預設）+ `en.json`，各 365 keys（zh/en parity）
 - localStorage 持久化語言切換（key = `lang`），`toggleLang()` 同步 `document.documentElement.lang`（zh → `zh-Hant`）
 - 全部 14 個 component + App.tsx 透過 `useTranslation()` / `t()` 接線；ErrorBoundary 走 `withTranslation` HOC（class component）
 
@@ -460,7 +468,7 @@ cd web; npm test
 ```
 ```bash
 ./.venv/bin/pip install -r requirements-dev.txt
-./.venv/bin/python -m pytest server/tests -v   # 55 tests
+./.venv/bin/python -m pytest server/tests -v   # 59 tests
 cd web && npm test                              # vitest 10 tests
 ```
 
@@ -480,3 +488,4 @@ cd web && npm test                              # vitest 10 tests
 - [x] Phase 9：測試（pytest 26 + vitest 10）+ ErrorBoundary + 多層 cache
 - [x] Phase 10：美股支援（Yahoo → 共用 daily_price）+ 6 大整合（crypto / FX / movers / SEC Form 4 / Finnhub / TXO PCR）+ 進階台股基本面 + 觀察清單（2 新表）+ 比較視圖 + 全面 i18n（zh/en 364 keys）+ .env 自動載入（python-dotenv）+ pytest 52 + 48 routes
 - [x] Phase 11：Fugle 個股/ETF 即時報價（含五檔，每 3 秒輪詢 + 交易時段 gate）+ SEC User-Agent 改 env + market_movers 去重 + 後端字串 i18n（technical 訊號 / outlook 研判因子+免責，英文模式 100% 乾淨，後端發 code/key+params）+ pytest 55 + 49 routes + 364 i18n keys
+- [x] Phase 12：多檔即時報價 WebSocket streamer（後端單一 Fugle 連線 hub + aggregates → `WS /ws/quotes` 廣播；自選清單 / movers 成交額 Top 5 各列即時價＋漲跌，免費上限 5 檔）+ websockets dep + pytest 59 + 365 i18n keys

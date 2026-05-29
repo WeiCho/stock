@@ -376,7 +376,8 @@
     "code_placeholder": "Ticker",
     "add_condition_button": "Add Condition",
     "condition_examples": "e.g. 2330 RSI < 30 (oversold, buy) / 2454 KD K > 80 (overbought warning) / 0050 Close > 150",
-    "empty_state": "No stocks watched yet. Enter a ticker to start tracking →"
+    "empty_state": "No stocks watched yet. Enter a ticker to start tracking →",
+    "live_note": "Top 5 stream live (Fugle free tier: 5 max)"
   },
   "compare": {
     "range": {

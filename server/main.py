@@ -9,11 +9,12 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
+import asyncio
 import threading
 import time as _time
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select, func
@@ -27,6 +28,7 @@ import crypto
 import finnhub
 import fred
 import fugle
+import fugle_ws
 import fundamentals_extra
 import fx
 import market_movers
@@ -254,6 +256,39 @@ async def stock_quote(symbol: str):
     if not data:
         raise HTTPException(status_code=503, detail="即時報價暫時無法取得")
     return data
+
+
+@app.websocket("/ws/quotes")
+async def ws_quotes(ws: WebSocket):
+    """多檔即時報價串流（自選清單 / movers 各列）。瀏覽器送 {action:'subscribe', symbols:[≤5]}，
+    後端維護單一 Fugle WS（aggregates channel）並廣播回來。需 FUGLE_API_KEY。"""
+    await ws.accept()
+    if not fugle.available():
+        await ws.send_json({"event": "error", "message": "需設定 FUGLE_API_KEY"})
+        await ws.close()
+        return
+    client = fugle_ws.hub.add_client()
+
+    async def pump():  # hub queue → 瀏覽器
+        try:
+            while True:
+                await ws.send_json(await client.queue.get())
+        except Exception:
+            pass
+
+    pumper = asyncio.create_task(pump())
+    try:
+        while True:
+            data = await ws.receive_json()
+            if isinstance(data, dict) and data.get("action") == "subscribe":
+                await fugle_ws.hub.set_client_symbols(client, data.get("symbols") or [])
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        pumper.cancel()
+        await fugle_ws.hub.remove_client(client)
 
 
 @app.get("/market/index/intraday")

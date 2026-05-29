@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLiveQuotes } from '../hooks/useLiveQuotes'
 
 // JSON 字典用單大括號 {var} 內插，覆寫 i18next 預設的 {{var}}
 const interp = { interpolation: { prefix: '{', suffix: '}' } }
@@ -102,6 +103,10 @@ export default function WatchlistPanel({ onSelectStock }: { onSelectStock?: (s: 
 
   const triggeredCount = conditions.filter(c => c.triggered).length
 
+  // 前 5 檔即時報價（Fugle WS hub，免費上限 5 檔）
+  const liveSyms = items.slice(0, 5).map(i => i.symbol)
+  const live = useLiveQuotes(liveSyms)
+
   return (
     <div className="space-y-5">
       <header className="flex items-baseline justify-between">
@@ -143,19 +148,32 @@ export default function WatchlistPanel({ onSelectStock }: { onSelectStock?: (s: 
       {items.length > 0 && (
         <section>
           <p className="text-xs text-slate-500 uppercase mb-2">{t('watchlist.watching_count', { count: items.length, ...interp })}</p>
+          {liveSyms.length > 0 && <p className="text-[10px] text-emerald-400/80 -mt-1 mb-2">{t('watchlist.live_note')}</p>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {items.map(it => {
               const conds = condBySym[it.symbol] || []
               return (
                 <div key={it.id} className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center">
                     <button onClick={() => onSelectStock?.(it.symbol)}
                       className="text-left hover:text-blue-400">
                       <span className="font-mono text-blue-300 text-base">{it.symbol}</span>
                       {it.name && <span className="text-slate-400 ml-2">{it.name}</span>}
                     </button>
+                    {(() => {
+                      const lq = live[it.symbol]
+                      if (lq?.last == null) return null
+                      const up = (lq.change ?? 0) >= 0
+                      return (
+                        <span className="ml-auto mr-3 font-mono text-sm flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="text-slate-100">{lq.last}</span>
+                          <span className={up ? 'text-red-400' : 'text-green-400'}>{up ? '+' : ''}{lq.change_pct}%</span>
+                        </span>
+                      )
+                    })()}
                     <button onClick={() => removeSymbol(it.symbol)}
-                      className="text-xs text-slate-500 hover:text-red-400">{t('common.remove')}</button>
+                      className={`text-xs text-slate-500 hover:text-red-400 ${live[it.symbol]?.last == null ? 'ml-auto' : ''}`}>{t('common.remove')}</button>
                   </div>
                   {conds.length === 0 ? (
                     <p className="text-[10px] text-slate-600 mt-2">{t('watchlist.no_conditions')}</p>

@@ -4,6 +4,7 @@ import { createChart, AreaSeries, BaselineSeries, LineSeries } from 'lightweight
 import { api } from '../api'
 import type { Bar, BigOrder, MoneyFlowResponse, RankRow, SectorRow } from '../types'
 import { toTime, isTradingHours, SESSION_MINUTES } from '../lib/charts'
+import { useLiveQuotes } from '../hooks/useLiveQuotes'
 
 function IndexChart({ data, intraday, previousClose }: { data?: Bar[]; intraday?: boolean; previousClose?: number | null }) {
   const { t } = useTranslation()
@@ -195,6 +196,10 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
     return () => { active = false }
   }, [])
 
+  // 成交額 Top 5 即時報價（Fugle WS hub，免費上限 5 檔；盤後/週末顯示最後一盤）
+  const liveSyms = (movers?.by_value ?? []).slice(0, 5).map(m => m.symbol)
+  const liveQuotes = useLiveQuotes(liveSyms)
+
   const data = index?.data || []
   const latest = data.at(-1)
   const prev = data.at(-2)
@@ -309,21 +314,35 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
             {/* 成交額 */}
             <div>
-              <p className="text-slate-500 uppercase mb-1">{t('market.top_turnover')}</p>
+              <p className="text-slate-500 uppercase mb-1">
+                {t('market.top_turnover')}
+                {Object.keys(liveQuotes).length > 0 && (
+                  <span className="text-emerald-400 normal-case ml-1">· {t('quote.live')}</span>
+                )}
+              </p>
               <table className="w-full"><tbody>
-                {movers.by_value?.slice(0, 5).map(m => (
-                  <tr key={m.symbol} onClick={() => onSelectStock?.(m.symbol)}
-                    className="border-b border-slate-800 hover:bg-slate-800/60 cursor-pointer">
-                    <td className="py-1 text-blue-300 font-mono">{m.symbol}</td>
-                    <td className="text-slate-400 truncate max-w-[7rem]">{m.name}</td>
-                    <td className={`text-right font-mono ${m.change_pct >= 0 ? 'text-red-400' : 'text-green-400'}`}>
-                      {m.change_pct >= 0 ? '+' : ''}{m.change_pct}%
-                    </td>
-                    <td className="text-right text-slate-500 font-mono">
-                      {m.trade_value ? `${(m.trade_value / 1e8).toFixed(0)}${t('market.unit_hundred_million')}` : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {movers.by_value?.slice(0, 5).map(m => {
+                  const lq = liveQuotes[m.symbol]
+                  const pct = lq?.change_pct ?? m.change_pct
+                  const isLive = lq?.last != null
+                  return (
+                    <tr key={m.symbol} onClick={() => onSelectStock?.(m.symbol)}
+                      className="border-b border-slate-800 hover:bg-slate-800/60 cursor-pointer">
+                      <td className="py-1 text-blue-300 font-mono">
+                        {isLive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1 align-middle" />}
+                        {m.symbol}
+                      </td>
+                      <td className="text-slate-400 truncate max-w-[7rem]">{m.name}</td>
+                      <td className={`text-right font-mono ${pct >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        {isLive && <span className="text-slate-200 mr-1">{lq.last}</span>}
+                        {pct >= 0 ? '+' : ''}{pct}%
+                      </td>
+                      <td className="text-right text-slate-500 font-mono">
+                        {m.trade_value ? `${(m.trade_value / 1e8).toFixed(0)}${t('market.unit_hundred_million')}` : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody></table>
             </div>
             {/* 漲幅 */}

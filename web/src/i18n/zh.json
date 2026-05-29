@@ -376,7 +376,8 @@
     "code_placeholder": "代碼",
     "add_condition_button": "新增條件",
     "condition_examples": "例：2330 RSI < 30（超賣可進）/ 2454 KD K > 80（高檔警戒）/ 0050 收盤價 > 150",
-    "empty_state": "尚未關注任何股票。輸入代碼開始追蹤 →"
+    "empty_state": "尚未關注任何股票。輸入代碼開始追蹤 →",
+    "live_note": "前 5 檔即時報價（Fugle 免費上限 5 檔）"
   },
   "compare": {
     "range": {
