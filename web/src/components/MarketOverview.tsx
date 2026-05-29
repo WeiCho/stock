@@ -208,15 +208,16 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
     return () => { active = false }
   }, [])
 
-  // 偏多候選多因子掃描（可切換是否排除 RSI 超買 → 找較早/未噴出的設定）
+  // 偏多候選多因子掃描：動能 / 穩步走多 兩模式 + 是否排除 RSI 超買（找較早/未噴出的設定）
+  const [screenMode, setScreenMode] = useState<'momentum' | 'steady'>('momentum')
   const [screenExOB, setScreenExOB] = useState(true)
   const [screenData, setScreenData] = useState<Awaited<ReturnType<typeof api.screen>> | null>(null)
   useEffect(() => {
     let active = true
     setScreenData(null)
-    api.screen(screenExOB, 3, 12).then(d => { if (active) setScreenData(d) }).catch(() => {})
+    api.screen(screenExOB, 3, 12, screenMode).then(d => { if (active) setScreenData(d) }).catch(() => {})
     return () => { active = false }
-  }, [screenExOB])
+  }, [screenExOB, screenMode])
 
   const data = index?.data || []
   const latest = data.at(-1)
@@ -435,35 +436,51 @@ export default function MarketOverview({ moneyFlow, onSelectStock }:
       )}
 
       {/* 偏多候選多因子掃描（研究訊號，非投資建議；可排除 RSI 超買找較早設定） */}
-      {screenData?.available && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <p className="text-xs text-slate-500 uppercase">{t('screen.title')}{screenData.date ? ` · ${screenData.date}` : ''}</p>
-            <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
-              <input type="checkbox" checked={screenExOB} onChange={e => setScreenExOB(e.target.checked)} className="accent-blue-500" />
-              {t('screen.exclude_ob')}
-            </label>
-          </div>
-          {screenData.items?.length ? (
-            <div>
-              {screenData.items.map(it => (
-                <div key={it.symbol} onClick={() => onSelectStock?.(it.symbol)}
-                  className="flex items-center gap-2 text-xs border-b border-slate-800 py-1.5 hover:bg-slate-800/60 cursor-pointer">
-                  <span className="text-blue-300 font-mono w-12 shrink-0">{it.symbol}</span>
-                  <span className="text-slate-400 w-12 shrink-0 truncate">{it.name}</span>
-                  <span className="text-red-300 font-mono w-8 shrink-0">+{it.score}</span>
-                  <span className="text-slate-500 flex-1 truncate">
-                    {it.reasons.slice(0, 3).join('、')}
-                    {it.overbought && <span className="text-amber-400 ml-1">⚠</span>}
-                  </span>
-                  <span className="text-slate-500 font-mono shrink-0">{it.per != null ? `PER ${it.per}` : ''}</span>
-                </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className="text-xs text-slate-500 uppercase">{t('screen.title')}{screenData?.date ? ` · ${screenData.date}` : ''}</p>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="flex rounded overflow-hidden border border-slate-700">
+              {(['momentum', 'steady'] as const).map(mo => (
+                <button key={mo} onClick={() => setScreenMode(mo)}
+                  className={`px-2 py-0.5 ${screenMode === mo ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                  {t(`screen.mode_${mo}`)}
+                </button>
               ))}
-              <p className="text-[10px] text-slate-600 mt-1.5">{t('screen.disclaimer')}</p>
             </div>
-          ) : <p className="text-xs text-slate-600">{t('common.no_data')}</p>}
+            {screenMode === 'momentum' && (
+              <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer">
+                <input type="checkbox" checked={screenExOB} onChange={e => setScreenExOB(e.target.checked)} className="accent-blue-500" />
+                {t('screen.exclude_ob')}
+              </label>
+            )}
+          </div>
         </div>
-      )}
+        {!screenData ? (
+          <p className="text-xs text-slate-600">{t('common.loading')}</p>
+        ) : screenData.items?.length ? (
+          <div>
+            {screenData.items.map(it => (
+              <div key={it.symbol} onClick={() => onSelectStock?.(it.symbol)}
+                className="flex items-center gap-2 text-xs border-b border-slate-800 py-1.5 hover:bg-slate-800/60 cursor-pointer">
+                <span className="text-blue-300 font-mono w-12 shrink-0">{it.symbol}</span>
+                <span className="text-slate-400 w-12 shrink-0 truncate">{it.name}</span>
+                <span className="text-red-300 font-mono w-8 shrink-0">+{it.score}</span>
+                <span className="text-slate-500 flex-1 truncate">
+                  {it.reasons.slice(0, 3).join('、')}
+                  {it.overbought && <span className="text-amber-400 ml-1">⚠</span>}
+                </span>
+                <span className="text-slate-500 font-mono shrink-0">
+                  {screenMode === 'steady' && it.expected?.target != null
+                    ? `${t('screen.target')}${it.expected.target}`
+                    : it.per != null ? `PER ${it.per}` : ''}
+                </span>
+              </div>
+            ))}
+            <p className="text-[10px] text-slate-600 mt-1.5">{t('screen.disclaimer')}</p>
+          </div>
+        ) : <p className="text-xs text-slate-600">{t('common.no_data')}</p>}
+      </div>
 
       {/* 盤後市場概況（成交金額、漲跌家數、三大法人；皆為收盤後資料，無官方即時版） */}
       {moneyFlow?.summary && (

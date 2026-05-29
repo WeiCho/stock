@@ -627,11 +627,13 @@ def market_valuation(top: int = 10):
 
 
 @app.get("/market/screen")
-def market_screen(exclude_overbought: bool = True, min_foreign_days: int = 3, top: int = 15):
+def market_screen(exclude_overbought: bool = True, min_foreign_days: int = 3,
+                  top: int = 15, mode: str = "momentum"):
     """偏多候選多因子掃描：動能(放量/漲幅) + 籌碼(外資連買) + 技術(均線/訊號) + 估值。
+    mode=momentum（動能）| steady（穩步走多/慢慢長：強制未過熱 + 多頭 + 低波動加權，附 outlook 預期區間）。
     exclude_overbought=True 排除 RSI 過熱者（找「尚未噴出」的較早設定）。研究訊號，非投資建議。"""
     return screen_module.bullish_screen(
-        exclude_overbought=exclude_overbought, min_foreign_days=min_foreign_days, top=top)
+        exclude_overbought=exclude_overbought, min_foreign_days=min_foreign_days, top=top, mode=mode)
 
 
 @app.get("/market/futures/pcr")

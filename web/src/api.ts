@@ -108,11 +108,16 @@ export const api = {
     }>('/market/valuation', { top }),
   stockValuation: (sym: string) =>
     get<{ available: boolean; symbol: string; date?: string; name?: string; per?: number | null; pbr?: number | null; dividend_yield?: number | null }>(`/stock/${sym}/valuation`),
-  screen: (excludeOverbought = true, minForeignDays = 3, top = 15) =>
+  screen: (excludeOverbought = true, minForeignDays = 3, top = 15, mode: 'momentum' | 'steady' = 'momentum') =>
     get<{
-      available: boolean; date?: string; disclaimer?: string
-      items?: { symbol: string; name: string; score: number; overbought: boolean; reasons: string[]; per?: number | null; dividend_yield?: number | null; foreign_days?: number; close?: number | null; rsi?: number | null }[]
-    }>('/market/screen', { exclude_overbought: excludeOverbought, min_foreign_days: minForeignDays, top }),
+      available: boolean; date?: string; disclaimer?: string; mode?: string
+      items?: {
+        symbol: string; name: string; score: number; overbought: boolean; reasons: string[]
+        per?: number | null; dividend_yield?: number | null; foreign_days?: number
+        close?: number | null; rsi?: number | null; volatility?: number | null
+        expected?: { target?: number; range_low?: number; range_high?: number; win_rate?: number; basis?: string }
+      }[]
+    }>('/market/screen', { exclude_overbought: excludeOverbought, min_foreign_days: minForeignDays, top, mode }),
   // SEC EDGAR Form 4
   insider: (sym: string, limit = 20) =>
     get<{

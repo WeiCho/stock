@@ -473,6 +473,9 @@
   "screen": {
     "title": "📈 Bullish-setup screen · multi-factor",
     "exclude_ob": "Exclude RSI overbought (earlier setups)",
-    "disclaimer": "Research signals, not investment advice; EOD data, no backtest, past ≠ future."
+    "disclaimer": "Research signals, not investment advice; EOD data, no backtest, past ≠ future.",
+    "mode_momentum": "Momentum",
+    "mode_steady": "Steady",
+    "target": "Target≈"
   }
 }

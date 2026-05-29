@@ -53,7 +53,8 @@ export function useLiveQuotes(symbols: string[]): Record<string, LiveQuote> {
         backoff = 1000 // 有收到資料 = 連線健康，重置退避
         try {
           const msg = JSON.parse(e.data)
-          if (msg.event === 'quote' && msg.quote?.symbol) {
+          // hub 會廣播所有 client 的報價 → 只收自己訂閱的 symbol，避免別的視圖洩漏進來
+          if (msg.event === 'quote' && msg.quote?.symbol && capped.includes(msg.quote.symbol)) {
             setQuotes(prev => ({ ...prev, [msg.quote.symbol]: msg.quote }))
           }
         } catch { /* ignore malformed frame */ }
