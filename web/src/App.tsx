@@ -7,6 +7,7 @@ import PriceChart from './components/PriceChart'
 import TechnicalPanel from './components/TechnicalPanel'
 import ChipPanel from './components/ChipPanel'
 import BacktestPanel from './components/BacktestPanel'
+import PatternPanel from './components/PatternPanel'
 import FundamentalsPanel from './components/FundamentalsPanel'
 import NewsPanel from './components/NewsPanel'
 import MarketOverview from './components/MarketOverview'
@@ -16,7 +17,7 @@ import FuturesPanel from './components/FuturesPanel'
 import MacroPanel from './components/MacroPanel'
 import ErrorBoundary from './components/ErrorBoundary'
 
-const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '基本面', '新聞']
+const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '型態', '基本面', '新聞']
 
 // 穩定的空物件 reference — 避免每次 render 都產生新 `{}` 害 PriceChart effect 重跑
 const EMPTY_MAS: Record<string, MaPoint[]> = {}
@@ -300,6 +301,9 @@ export default function App() {
                     backtest.loading
                       ? <Spinner />
                       : <BacktestPanel data={backtest.data} signal={btSignal} onSignalChange={setBtSignal} />
+                  )}
+                  {activeTab === '型態' && symbol && (
+                    <PatternPanel symbol={symbol} />
                   )}
                   {activeTab === '基本面' && (
                     fundamentals.loading ? <Spinner /> : <FundamentalsPanel data={fundamentals.data} />

@@ -28,6 +28,8 @@ SUPPORTED_SIGNALS = {
     # twstock BestFourPoint 四大買賣點（負/正乖離率 pivot + 任一量價/均線條件）
     "best_four_buy":   "四大買點（量價/均線 + 負乖離反彈，twstock）",
     "best_four_sell":  "四大賣點（量價/均線 + 正乖離反轉，twstock）",
+    # 均線收斂突破：四線糾結 + MA5/10上翹 + 昨在MA60下 + 今突破MA20
+    "ma_tangle_breakout": "均線收斂突破（四線糾結＋短線上翹＋首根突破MA60）",
 }
 
 
@@ -93,6 +95,55 @@ def _best_four_sell_mask(df: pd.DataFrame) -> pd.Series:
     return pivot & (c1 | c2 | c3 | c4)
 
 
+def _ma_tangle_breakout_mask(df: pd.DataFrame) -> pd.Series:
+    """均線收斂突破形態（整合壓縮彈弓 + 均線糾結噴出）：
+    1. MA5/10/20/60 四線差距 < 收盤 5%（緊密收斂）
+    2. MA5、MA10 斜率 > 0（短線上翹，動能翻正）
+    3. 近10根底部有支撐（低點平台未被跌破）
+    4. 今日收盤站上 MA20（突破中期壓力）
+    5. 昨收在 MA60 以下（今日才是第一根穿越長線均線）
+
+    加分條件（不影響觸發）：
+    - MA60 上斜 → 長線無壓，力道最強
+    - MA60 下斜 → 均線未轉，股價領先，爆發型訊號
+    """
+    if not {"close", "low"}.issubset(df.columns) or len(df) < 65:
+        return pd.Series(False, index=df.index)
+
+    slope_n = 3
+    ma5  = df["close"].rolling(5).mean()
+    ma10 = df["close"].rolling(10).mean()
+    ma20 = df["close"].rolling(20).mean()
+    ma60 = df["close"].rolling(60).mean()
+
+    ma_max = pd.concat([ma5, ma10, ma20, ma60], axis=1).max(axis=1)
+    ma_min = pd.concat([ma5, ma10, ma20, ma60], axis=1).min(axis=1)
+
+    cond_tangle      = (ma_max - ma_min) < (df["close"] * 0.05)
+    cond_short_up    = ((ma5 - ma5.shift(slope_n)) > 0) & ((ma10 - ma10.shift(slope_n)) > 0)
+    cond_support     = df["low"] >= df["low"].rolling(10).min().shift(1) * 0.99
+    cond_above_ma20  = df["close"] > ma20
+    cond_prev_below_ma60 = df["close"].shift(1) <= ma60.shift(1)
+
+    return cond_tangle & cond_short_up & cond_support & cond_above_ma20 & cond_prev_below_ma60
+
+
+# 向下相容：pattern-scan API 仍用此名稱
+_slingshot_mask = _ma_tangle_breakout_mask
+
+
+def _ma60_bonus(df: pd.DataFrame) -> pd.Series:
+    """觸發日的 MA60 方向：上斜=True（長線無壓），下斜=False（領先突破）。"""
+    if len(df) < 65:
+        return pd.Series(False, index=df.index)
+    ma60 = df["close"].rolling(60).mean()
+    return (ma60 - ma60.shift(3)) >= 0
+
+
+# 向下相容
+_slingshot_ma60_bonus = _ma60_bonus
+
+
 WEEKLY_SIGNALS = {"weekly_ma_cross"}
 
 
@@ -155,6 +206,9 @@ def _detect_trigger(df: pd.DataFrame, signal: str) -> pd.Series:
 
     if signal == "best_four_sell":
         return _best_four_sell_mask(df)
+
+    if signal == "ma_tangle_breakout":
+        return _ma_tangle_breakout_mask(df)
 
     return false
 

@@ -136,6 +136,29 @@ def detect_signals(df: pd.DataFrame, timeframe: str = "daily") -> list[dict]:
                 direction = "bullish" if last["close"] > last["bb_mid"] else "bearish"
                 signals.append({"name": "布林通道收縮後突破", "type": direction, "triggered": True})
 
+    # 均線糾結噴出：MA5/10/20/60 四線緊密交錯，底部平台撐著，今日收盤突破站上全線
+    ma_cols_tangle = ["ma5", "ma10", "ma20", "ma60"] if timeframe == "daily" else ["ma5", "ma10", "ma20", "ma52"]
+    if all(c in df.columns for c in ma_cols_tangle) and len(df) >= 65:
+        ma_vals = [last[c] for c in ma_cols_tangle]
+        ma_vals_prev = [prev[c] for c in ma_cols_tangle]
+        if all(pd.notna(v) for v in ma_vals + ma_vals_prev):
+            ma_spread = max(ma_vals) - min(ma_vals)
+            # 四線緊密糾結（最大差距 < 收盤 5%）
+            tangle = ma_spread < last["close"] * 0.05
+            # 今日收盤站上全部均線
+            above_all = all(last["close"] > v for v in ma_vals)
+            # 昨日收盤仍在 MA60 以下（糾結期尚未突破，今日才是第一根穿越）
+            ma60_col = "ma60" if timeframe == "daily" else "ma52"
+            prev_not_above = prev["close"] <= prev[ma60_col]
+            # 近10根底部未被今日低點跌破（有平台支撐）
+            if len(df) >= 12:
+                recent_low = df["low"].iloc[-11:-1].min()
+                support_ok = last["low"] >= recent_low * 0.99
+            else:
+                support_ok = True
+            if tangle and above_all and prev_not_above and support_ok:
+                signals.append({"name": "均線糾結噴出（四線交錯＋底部撐＋突破站上）", "type": "bullish", "triggered": True})
+
     return signals
 
 

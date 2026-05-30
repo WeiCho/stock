@@ -158,6 +158,53 @@ export interface BigOrder {
   trades?: { price: number; size: number; amount: number; time?: number }[]
 }
 
+// 型態掃描（/stock/{symbol}/pattern-scan）
+export interface PatternDiagnostics {
+  ma5_slope:  number | null
+  ma10_slope: number | null
+  ma20_slope: number | null
+  ma60_slope: number | null
+  close:      number | null
+  ma20:       number | null
+  ma60?:      number | null
+  ma_spread?: number | null
+  prev_close?:       number | null
+  prev_ma60?:        number | null
+  cond_tangle?:      boolean
+  cond_short_up?:    boolean
+  cond_above_ma20?:  boolean
+  cond_first_break?: boolean
+  cond_support?:     boolean
+}
+
+export interface PatternResult {
+  pattern: string
+  pattern_name: string
+  description: string
+  total_triggers: number
+  trigger_dates: string[]
+  current: {
+    triggered: boolean
+    ma60_bonus: boolean
+    ma60_direction?: 'up' | 'down'
+    label: string
+  }
+  diagnostics: PatternDiagnostics
+}
+
+export interface PatternScanResponse {
+  symbol: string
+  // 舊版單一型態欄位（向下相容）
+  pattern: string
+  pattern_name: string
+  total_triggers: number
+  trigger_dates: string[]
+  current: { triggered: boolean; ma60_bonus: boolean; label: string }
+  diagnostics: PatternDiagnostics
+  // 新版多型態陣列
+  patterns: PatternResult[]
+}
+
 // 大盤資金動向（/market/money-flow）
 export interface RankRow { symbol: string; name?: string; foreign?: number; trust?: number; dealer?: number }
 export interface SectorRow { industry: string; count: number; total: number }

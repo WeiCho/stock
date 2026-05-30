@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { createChart, createSeriesMarkers, CandlestickSeries, BaselineSeries, LineSeries, IChartApi, ISeriesApi, LineData, SeriesMarker, Time } from 'lightweight-charts'
+import { createChart, createSeriesMarkers, CandlestickSeries, BaselineSeries, LineSeries, HistogramSeries, IChartApi, LineData, SeriesMarker, Time } from 'lightweight-charts'
 import type { Bar, MaPoint } from '../types'
-import { rsi as calcRsi, kdj as calcKdj, macd as calcMacd } from '../indicators'
+import { macd as calcMacd } from '../indicators'
 import { toTime, SESSION_MINUTES } from '../lib/charts'
 
 // 偵測兩條序列的「金叉/死叉」：a 由下而上穿越 b = 金叉；由上而下 = 死叉
@@ -47,8 +47,8 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
           : undefined,
       },
       width: el.clientWidth,
-      // 非盤中加 MACD + RSI + KDJ 三個副圖 → 主圖 320 + 三個 80 = 560
-      height: intraday ? 320 : 600,
+      // 非盤中加 MACD（pane 1）+ 量能 K 棒（pane 2）兩個副圖
+      height: intraday ? 320 : 520,
     })
     chartRef.current = chart
 
@@ -145,53 +145,32 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
         })
       }
 
-      // ───── RSI 副圖（pane 2）── 0-100 帶 30/70 超買超賣參考線
-      const rsiData = calcRsi(data, 14)
-      if (rsiData.length > 0) {
-        const rsiSeries = chart.addSeries(LineSeries, {
-          color: '#a78bfa', lineWidth: 1, priceLineVisible: false,
-          priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
-        }, 2)
-        rsiSeries.setData(rsiData as unknown as LineData<Time>[])
-        rsiSeries.createPriceLine({ price: 70, color: '#64748b', lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: '超買' })
-        rsiSeries.createPriceLine({ price: 30, color: '#64748b', lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: '超賣' })
-      }
+      // ───── 量能 K 棒副圖（pane 2）── 紅漲綠跌，與主圖 K 棒同色系
+      const volSeries = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: 'volume' },
+        priceScaleId: 'vol',
+        priceLineVisible: false,
+        lastValueVisible: false,
+      }, 2)
+      volSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0 } })
+      volSeries.setData(data.map(r => ({
+        time: toTime(r.date),
+        value: r.volume,
+        color: r.close >= r.open ? '#ef444488' : '#22c55e88',
+      })))
 
-      // ───── KDJ 副圖（pane 3）── 進場時機（K/D 交叉，K<30 / K>70 才標記）
-      const kdjData = calcKdj(data, 9)
-      if (kdjData.k.length > 0) {
-        const kSeries = chart.addSeries(LineSeries, { color: '#facc15', lineWidth: 1, priceLineVisible: false }, 3)
-        const dSeries = chart.addSeries(LineSeries, { color: '#60a5fa', lineWidth: 1, priceLineVisible: false }, 3)
-        const jSeries = chart.addSeries(LineSeries, { color: '#f472b6', lineWidth: 1, priceLineVisible: false }, 3)
-        kSeries.setData(kdjData.k as unknown as LineData<Time>[])
-        dSeries.setData(kdjData.d as unknown as LineData<Time>[])
-        jSeries.setData(kdjData.j as unknown as LineData<Time>[])
-        const offset = data.length - kdjData.k.length  // kdj 從 bars[n-1] 起算
-        detectCrosses(kdjData.k, kdjData.d).forEach(c => {
-          const kVal = kdjData.k[c.i].value
-          // 只標記 K<30 黃金交叉（低檔進場）或 K>70 死亡交叉（高檔出場）— 過濾雜訊
-          if ((c.type === 'golden' && kVal < 30) || (c.type === 'death' && kVal > 70)) {
-            allMarkers.push({
-              time: toTime(data[c.i + offset].date),
-              position: c.type === 'golden' ? 'belowBar' : 'aboveBar',
-              color: c.type === 'golden' ? '#facc15' : '#a3a3a3',
-              shape: 'square',
-              text: c.type === 'golden' ? 'KDJ低' : 'KDJ高',
-            })
-          }
-        })
-      }
-
-      // 一次套用所有 markers：MA / MACD / KDJ 三層訊號疊在 K 線上
-      // 「Top-Down」分析：MACD 看大方向（橙圓），KDJ 找進場（黃方），MA 看趨勢轉折（紅藍箭）
+      // 一次套用所有 markers：MA / MACD 訊號疊在 K 線上
       if (candle && allMarkers.length > 0) {
         allMarkers.sort((a, b) => (a.time as number) - (b.time as number))
         createSeriesMarkers(candle, allMarkers)
       }
 
-      // 設定 panes 高度：主圖大、三個副圖各 80
+      // 設定 panes 高度：主圖大、MACD 60、量能 80
       const panes = chart.panes()
-      panes.forEach((p, idx) => { if (idx > 0) p.setHeight(80) })
+      panes.forEach((p, idx) => {
+        if (idx === 1) p.setHeight(60)
+        if (idx === 2) p.setHeight(80)
+      })
     }
 
     const obs = new ResizeObserver(() => {

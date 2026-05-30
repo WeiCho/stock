@@ -284,6 +284,99 @@ def stock_pine(symbol: str, signal: str = "ma_cross"):
     return result
 
 
+@app.get("/stock/{symbol}/pattern-scan")
+def stock_pattern_scan(symbol: str):
+    """均線收斂突破型態掃描：歷史觸發次數、最近觸發日、當前條件進度、MA60 方向加分。"""
+    from backtest import _ma_tangle_breakout_mask, _ma60_bonus
+    from technical import calc_indicators
+
+    ensure_stock_data(symbol)
+    daily = get_price_df(symbol)
+    if daily.empty:
+        raise HTTPException(status_code=404, detail=f"找不到 {symbol} 的資料")
+
+    daily.index = pd.to_datetime(daily.index)
+    df = calc_indicators(daily.copy(), "daily")
+    close = df["close"]
+
+    def _slope(series, n=3):
+        v = series.dropna()
+        if len(v) < n + 1:
+            return None
+        return round(float(v.iloc[-1] - v.iloc[-(n + 1)]), 4)
+
+    ma5  = close.rolling(5).mean()
+    ma10 = close.rolling(10).mean()
+    ma20 = close.rolling(20).mean()
+    ma60 = close.rolling(60).mean()
+
+    mask    = _ma_tangle_breakout_mask(df).fillna(False)
+    dates   = df.index[mask].tolist()
+    now     = bool(mask.iloc[-1]) if len(mask) else False
+    ma60_up = bool(_ma60_bonus(df).iloc[-1]) if len(df) >= 65 else False
+
+    # 各條件診斷值
+    ma_vals   = [ma5.iloc[-1], ma10.iloc[-1], ma20.iloc[-1], ma60.iloc[-1]]
+    spread    = round(float(max(ma_vals) - min(ma_vals)), 2) if all(pd.notna(v) for v in ma_vals) else None
+    cur_close = round(float(close.iloc[-1]), 2) if len(close) else None
+    cur_ma20  = round(float(ma20.iloc[-1]), 2) if len(close) >= 20 else None
+    cur_ma60  = round(float(ma60.iloc[-1]), 2) if len(close) >= 60 else None
+    prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else None
+    prev_ma60  = round(float(ma60.iloc[-2]), 2) if len(close) >= 61 else None
+
+    cond_tangle      = spread is not None and cur_close is not None and spread < cur_close * 0.05
+    cond_short_up    = (_slope(ma5) or 0) > 0 and (_slope(ma10) or 0) > 0
+    cond_above_ma20  = cur_close is not None and cur_ma20 is not None and cur_close > cur_ma20
+    cond_first_break = prev_close is not None and prev_ma60 is not None and prev_close <= prev_ma60
+    cond_support     = (
+        float(df["low"].iloc[-1]) >= float(df["low"].iloc[-11:-1].min()) * 0.99
+        if len(df) >= 11 else True
+    )
+
+    label = (
+        "符合（MA60 上斜，力道最強）" if now and ma60_up
+        else "符合（MA60 下斜，領先突破）" if now
+        else "不符合"
+    )
+
+    pattern = {
+        "pattern": "ma_tangle_breakout",
+        "pattern_name": "均線收斂突破",
+        "description": "四條均線緊密收斂（差距 < 5%），短線上翹，底部有支撐，今日突破 MA20 且昨天還在 MA60 以下。",
+        "total_triggers": len(dates),
+        "trigger_dates": [pd.Timestamp(d).strftime("%Y-%m-%d") for d in dates[-10:]],
+        "current": {
+            "triggered": now,
+            "ma60_bonus": ma60_up,
+            "ma60_direction": "up" if ma60_up else "down",
+            "label": label,
+        },
+        "diagnostics": {
+            "ma5_slope":  _slope(ma5),
+            "ma10_slope": _slope(ma10),
+            "ma20_slope": _slope(ma20),
+            "ma60_slope": _slope(ma60),
+            "close":      cur_close,
+            "ma20":       cur_ma20,
+            "ma60":       cur_ma60,
+            "ma_spread":  spread,
+            "prev_close": prev_close,
+            "prev_ma60":  prev_ma60,
+            "cond_tangle":      cond_tangle,
+            "cond_short_up":    cond_short_up,
+            "cond_above_ma20":  cond_above_ma20,
+            "cond_first_break": cond_first_break,
+            "cond_support":     cond_support,
+        },
+    }
+
+    return {
+        "symbol": symbol,
+        **pattern,
+        "patterns": [pattern],
+    }
+
+
 @app.get("/stock/{symbol}/news")
 def stock_news(symbol: str, company_name: str = "", limit: int = 10):
     """個股新聞列表。"""
