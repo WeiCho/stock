@@ -779,6 +779,44 @@ def get_institutional_df(symbol: str, days: int = 60) -> pd.DataFrame:
     } for r in rows]).set_index("date")
 
 
+def _topup_recent_if_stale(symbol: str) -> None:
+    """個股已在 DB，但「下載一次後就不再更新」會讓資料停在當初查詢的那天（例：2330 停在 05-27）。
+    這裡補最近交易日；用 sync_log 節流成「每天最多嘗試一次」，避免每個 /price 請求都打 FinMind 額度。
+    DailyPrice 有 (symbol,date) unique + INSERT OR IGNORE，重複補資料不會產生重覆列。"""
+    today = date.today()
+    with get_session() as session:
+        sync = session.execute(
+            select(SyncLog).where(SyncLog.symbol == symbol, SyncLog.data_type == "price")
+        ).scalar_one_or_none()
+        if sync and sync.last_synced and sync.last_synced.date() >= today:
+            return  # 今天已嘗試過 → 不重複打外部 API（省額度）
+        last_date = session.execute(
+            select(func.max(DailyPrice.date)).where(DailyPrice.symbol == symbol)
+        ).scalar()
+    if last_date is not None and last_date >= today:
+        return  # DB 已是最新
+
+    try:
+        import us_stocks  # 避免循環 import
+        if us_stocks.is_us_stock(symbol):
+            us_stocks.ensure_us_stock_data(symbol.upper(), years=1)
+        else:
+            fetch_finmind_price_history(symbol, years=1)  # dedup，只補缺的近日
+    except Exception as e:
+        log.warning("%s 增量補資料失敗：%s", symbol, e)
+
+    # 不論有無新資料，標記今天已嘗試（節流到一天一次）
+    with get_session() as session:
+        sync = session.execute(
+            select(SyncLog).where(SyncLog.symbol == symbol, SyncLog.data_type == "price")
+        ).scalar_one_or_none()
+        if sync:
+            sync.last_synced = datetime.utcnow()
+        else:
+            session.add(SyncLog(symbol=symbol, data_type="price", last_synced=datetime.utcnow()))
+        session.commit()
+
+
 def ensure_stock_data(symbol: str) -> bool:
     """
     確保個股資料存在；若尚未下載則觸發歷史資料抓取。
@@ -797,6 +835,7 @@ def ensure_stock_data(symbol: str) -> bool:
         ).first() is not None
 
     if has_data:
+        _topup_recent_if_stale(symbol)  # 補最近交易日，避免「下載一次後就過期」
         return True
 
     # ── 美股分支 ──

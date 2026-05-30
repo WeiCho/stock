@@ -41,7 +41,7 @@ taiwan-stock/
 ├── stocks.db              # SQLite（自動建立，勿 commit）
 ├── pine_output/           # 生成的 .pine 檔（勿 commit）
 ├── server/                # FastAPI 後端（25 個模組）
-│   ├── main.py            # 49 routes，top-level imports（無 inline）+ 啟動 load_dotenv()
+│   ├── main.py            # 52 routes，top-level imports（無 inline）+ 啟動 load_dotenv()
 │   ├── db.py              # SQLAlchemy + SQLite init（10 張表）
 │   ├── data_fetcher.py    # 三層下載策略（FinMind 主力 + TWSE/TPEx 備援；台股 + 美股分流）
 │   ├── indicators.py      # 自寫純 pandas SMA/RSI/MACD/KD/BBands
@@ -86,7 +86,7 @@ taiwan-stock/
     │   ├── App.tsx        # 7 views: market / global / futures / macro / compare / watchlist / stock
     │   ├── api.ts         # 單一 api 物件，generic get<T>() + ~30 endpoint wrappers
     │   ├── types.ts       # 10+ response types
-    │   ├── i18n/          # index.ts（react-i18next init + toggleLang）+ zh.json / en.json（各 372 keys）
+    │   ├── i18n/          # index.ts（react-i18next init + toggleLang）+ zh.json / en.json（各 375 keys）
     │   ├── indicators.ts  # JS 端 RSI / KDJ / MACD（給副圖用）
     │   ├── indicators.test.ts  # vitest 10 個
     │   ├── lib/charts.ts  # toTime / isTradingHours / SESSION_MINUTES
@@ -449,7 +449,7 @@ cd web && npm run dev   # → http://localhost:5173
 7. **個股**（symbol 設定後，台股 + 美股）— 即時報價（Fugle 五檔，每 3 秒）+ 7 時間框架 K 線 + 6 個 tab（綜合研判/技術/籌碼/回測/基本面/新聞）
 
 ### i18n（react-i18next）
-- 兩本字典 `web/src/i18n/zh.json`（zh-TW，預設）+ `en.json`，各 372 keys（zh/en parity）
+- 兩本字典 `web/src/i18n/zh.json`（zh-TW，預設）+ `en.json`，各 375 keys（zh/en parity）
 - localStorage 持久化語言切換（key = `lang`），`toggleLang()` 同步 `document.documentElement.lang`（zh → `zh-Hant`）
 - 全部 14 個 component + App.tsx 透過 `useTranslation()` / `t()` 接線；ErrorBoundary 走 `withTranslation` HOC（class component）
 
@@ -514,4 +514,5 @@ cd web && npm test                              # vitest 10 tests
 - [x] Phase 11：Fugle 個股/ETF 即時報價（含五檔，每 3 秒輪詢 + 交易時段 gate）+ SEC User-Agent 改 env + market_movers 去重 + 後端字串 i18n（technical 訊號 / outlook 研判因子+免責，英文模式 100% 乾淨，後端發 code/key+params）+ pytest 55 + 49 routes + 364 i18n keys
 - [x] Phase 12：多檔即時報價 WebSocket streamer（後端單一 Fugle 連線 hub + aggregates → `WS /ws/quotes` 廣播；自選清單 / movers 成交額 Top 5 各列即時價＋漲跌，免費上限 5 檔）+ websockets dep + pytest 59 + 365 i18n keys
 - [x] Phase 13：TWSE OpenAPI 官方整合（免 key/免額度）— `twse_openapi.py` 全市場估值篩選 BWIBBU（低本益比/高殖利率 → `/market/valuation` + 大盤估值面板）+ 個股 PER/PBR/殖利率（`/stock/{symbol}/valuation`）+ margin-short 附 TWSE 官方最新；pytest 71 + 51 routes + 369 i18n keys
-- [x] Phase 14：偏多候選多因子掃描 `screen.py`（動能+籌碼連買+技術+估值收斂，輕量訊號免回測）→ `GET /market/screen`（可調濾網，例如排除 RSI 超買找較早設定）+ 大盤頁「偏多候選」面板；pytest 76 + 52 routes + 372 i18n keys。研究訊號，非投資建議
+- [x] Phase 14：偏多候選多因子掃描 `screen.py`（動能+籌碼連買+技術+估值收斂，輕量訊號免回測）→ `GET /market/screen`（可調濾網，例如排除 RSI 超買找較早設定）+ 大盤頁「偏多候選」面板；pytest 76 + 52 routes + 375 i18n keys。研究訊號，非投資建議
+- [x] Phase 15：資料新鮮度修復 — T86 三大法人改 `/rwd/zh/fund/T86`（TWSE 棄用舊 `/fund/T86`，回空）；個股 `daily_price` 加「每日節流增量 top-up」（`_topup_recent_if_stale`，修掉「下載一次後就停在當天」的 staleness，連帶 technical/outlook 同步更新）
