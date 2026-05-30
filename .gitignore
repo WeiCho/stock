@@ -6,5 +6,6 @@ pine_output/
 .env
 web/node_modules
 web/dist
+web/package-lock.json
 _start_backend.cmd
 _start_frontend.cmd
