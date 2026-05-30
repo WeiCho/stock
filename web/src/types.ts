@@ -170,11 +170,26 @@ export interface PatternDiagnostics {
   ma_spread?: number | null
   prev_close?:       number | null
   prev_ma60?:        number | null
+  prev_vol?:         number | null
+  vol_ma20?:         number | null
+  vol_threshold?:    number | null
+  ma60_gap?:         number | null
+  ma60_gap_pct?:     number | null
   cond_tangle?:      boolean
+  cond_near_ma60?:   boolean
   cond_short_up?:    boolean
   cond_above_ma20?:  boolean
   cond_first_break?: boolean
   cond_support?:     boolean
+}
+
+export interface PatternBacktestStat {
+  hold_days: number
+  sample_count: number
+  win_rate: number
+  avg_return: number
+  max_gain: number
+  max_loss: number
 }
 
 export interface PatternResult {
@@ -183,8 +198,10 @@ export interface PatternResult {
   description: string
   total_triggers: number
   trigger_dates: string[]
+  backtest_stats?: PatternBacktestStat[]
   current: {
     triggered: boolean
+    setup_triggered?: boolean
     ma60_bonus: boolean
     ma60_direction?: 'up' | 'down'
     label: string
@@ -203,6 +220,29 @@ export interface PatternScanResponse {
   diagnostics: PatternDiagnostics
   // 新版多型態陣列
   patterns: PatternResult[]
+}
+
+// 全市場型態掃描（/market/pattern-scan）
+export interface MarketPatternItem {
+  symbol: string
+  name: string
+  close: number
+  ma60: number
+  ma60_gap_pct: number
+  ma60_direction: 'up' | 'down'
+  ma_spread: number
+  ma_threshold: number
+  prev_vol: number | null
+  vol_threshold: number | null
+  last_trigger: string | null
+  total_triggers: number
+}
+
+export interface MarketPatternScanResponse {
+  scanned: number
+  triggered: MarketPatternItem[]
+  setup: MarketPatternItem[]
+  as_of: string | null
 }
 
 // 大盤資金動向（/market/money-flow）

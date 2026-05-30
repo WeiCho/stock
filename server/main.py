@@ -286,9 +286,8 @@ def stock_pine(symbol: str, signal: str = "ma_cross"):
 
 @app.get("/stock/{symbol}/pattern-scan")
 def stock_pattern_scan(symbol: str):
-    """均線收斂突破型態掃描：歷史觸發次數、最近觸發日、當前條件進度、MA60 方向加分。"""
+    """三線交纏帶量突破 MA60 型態掃描。"""
     from backtest import _ma_tangle_breakout_mask, _ma60_bonus
-    from technical import calc_indicators
 
     ensure_stock_data(symbol)
     daily = get_price_df(symbol)
@@ -296,8 +295,9 @@ def stock_pattern_scan(symbol: str):
         raise HTTPException(status_code=404, detail=f"找不到 {symbol} 的資料")
 
     daily.index = pd.to_datetime(daily.index)
-    df = calc_indicators(daily.copy(), "daily")
-    close = df["close"]
+    df = daily.copy()
+    close  = df["close"]
+    volume = df["volume"]
 
     def _slope(series, n=3):
         v = series.dropna()
@@ -305,48 +305,100 @@ def stock_pattern_scan(symbol: str):
             return None
         return round(float(v.iloc[-1] - v.iloc[-(n + 1)]), 4)
 
-    ma5  = close.rolling(5).mean()
-    ma10 = close.rolling(10).mean()
-    ma20 = close.rolling(20).mean()
-    ma60 = close.rolling(60).mean()
+    ma5      = close.rolling(5).mean()
+    ma10     = close.rolling(10).mean()
+    ma20     = close.rolling(20).mean()
+    ma60     = close.rolling(60).mean()
+    vol_ma20 = volume.rolling(20).mean()
 
     mask    = _ma_tangle_breakout_mask(df).fillna(False)
     dates   = df.index[mask].tolist()
     now     = bool(mask.iloc[-1]) if len(mask) else False
     ma60_up = bool(_ma60_bonus(df).iloc[-1]) if len(df) >= 65 else False
 
-    # 各條件診斷值
-    ma_vals   = [ma5.iloc[-1], ma10.iloc[-1], ma20.iloc[-1], ma60.iloc[-1]]
-    spread    = round(float(max(ma_vals) - min(ma_vals)), 2) if all(pd.notna(v) for v in ma_vals) else None
-    cur_close = round(float(close.iloc[-1]), 2) if len(close) else None
-    cur_ma20  = round(float(ma20.iloc[-1]), 2) if len(close) >= 20 else None
-    cur_ma60  = round(float(ma60.iloc[-1]), 2) if len(close) >= 60 else None
-    prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else None
-    prev_ma60  = round(float(ma60.iloc[-2]), 2) if len(close) >= 61 else None
+    # ── 各條件診斷值（以今日為視角）
+    cur_close  = round(float(close.iloc[-1]), 2)   if len(close) >= 1  else None
+    prev_close = round(float(close.iloc[-2]), 2)   if len(close) >= 2  else None
+    day2_close = round(float(close.iloc[-3]), 2)   if len(close) >= 3  else None
+    cur_ma60   = round(float(ma60.iloc[-1]),  2)   if len(close) >= 60 else None
+    prev_ma60  = round(float(ma60.iloc[-2]),  2)   if len(close) >= 61 else None
+    day2_ma60  = round(float(ma60.iloc[-3]),  2)   if len(close) >= 62 else None
 
-    cond_tangle      = spread is not None and cur_close is not None and spread < cur_close * 0.05
-    cond_short_up    = (_slope(ma5) or 0) > 0 and (_slope(ma10) or 0) > 0
-    cond_above_ma20  = cur_close is not None and cur_ma20 is not None and cur_close > cur_ma20
-    cond_first_break = prev_close is not None and prev_ma60 is not None and prev_close <= prev_ma60
-    cond_support     = (
-        float(df["low"].iloc[-1]) >= float(df["low"].iloc[-11:-1].min()) * 0.99
-        if len(df) >= 11 else True
-    )
+    # 三線交纏：今日 MA5/10/20 差距 < 收盤 3%
+    three_vals = [ma5.iloc[-1], ma10.iloc[-1], ma20.iloc[-1]] if len(close) >= 20 else []
+    three_spread = round(float(max(three_vals) - min(three_vals)), 2) if three_vals and all(pd.notna(v) for v in three_vals) else None
+    tangle_threshold = round(float(cur_close * 0.03), 2) if cur_close else None
+    cond_tangle = three_spread is not None and tangle_threshold is not None and three_spread < tangle_threshold
+
+    # 收盤接近 MA60（差距 < 收盤 3%，尚未突破）
+    ma60_gap = round(abs(cur_close - cur_ma60), 2) if cur_close and cur_ma60 else None
+    ma60_gap_threshold = round(float(cur_close * 0.03), 2) if cur_close else None
+    cond_near_ma60 = ma60_gap is not None and ma60_gap_threshold is not None and ma60_gap < ma60_gap_threshold
+
+    # 蓄勢中：三線交纏 + 接近 MA60（尚未突破，可準備）
+    setup_triggered = cond_tangle and cond_near_ma60
+
+    # 今日與昨日均站上 MA60（連續 2 日）
+    cond_above_ma60 = (cur_close is not None and cur_ma60 is not None and cur_close > cur_ma60 and
+                       prev_close is not None and prev_ma60 is not None and prev_close > prev_ma60)
+
+    # 前天在 MA60 以下（突破剛發生）
+    cond_first_break = day2_close is not None and day2_ma60 is not None and day2_close <= day2_ma60
+
+    # 昨日帶量：昨量 > 20 日均量 × 1.5
+    prev_vol    = round(float(volume.iloc[-2]))      if len(volume) >= 2  else None
+    prev_vol_ma = round(float(vol_ma20.iloc[-2]))    if len(volume) >= 21 else None
+    vol_threshold = round(prev_vol_ma * 1.5)         if prev_vol_ma else None
+    cond_volume = prev_vol is not None and vol_threshold is not None and prev_vol > vol_threshold
 
     label = (
-        "符合（MA60 上斜，力道最強）" if now and ma60_up
-        else "符合（MA60 下斜，領先突破）" if now
-        else "不符合"
+        "突破完成（MA60 上斜，力道最強）" if now and ma60_up
+        else "突破完成（MA60 下斜，領先突破）" if now
+        else "蓄勢中，等待帶量突破 MA60" if setup_triggered
+        else "尚未形成"
     )
+
+    # ── 觸發後回測勝率（冷卻期去重，確保樣本獨立）
+    daily_index = daily.index
+    backtest_stats = []
+    for n in [5, 10, 20]:
+        returns = []
+        cooldown_until = None
+        for trigger_date in sorted(dates):
+            if cooldown_until is not None and pd.Timestamp(trigger_date) <= cooldown_until:
+                continue
+            prior = daily_index[daily_index <= trigger_date]
+            if len(prior) == 0:
+                continue
+            entry_date = prior[-1]
+            future = daily_index[daily_index > entry_date]
+            if len(future) < n:
+                continue
+            entry_price = float(daily.loc[entry_date, "close"])
+            exit_price  = float(daily.loc[future[n - 1], "close"])
+            returns.append((exit_price - entry_price) / entry_price * 100)
+            cooldown_until = future[n - 1]
+        if returns:
+            wins = sum(1 for r in returns if r > 0)
+            backtest_stats.append({
+                "hold_days":    n,
+                "sample_count": len(returns),
+                "win_rate":     round(wins / len(returns) * 100, 1),
+                "avg_return":   round(sum(returns) / len(returns), 2),
+                "max_gain":     round(max(returns), 2),
+                "max_loss":     round(min(returns), 2),
+            })
 
     pattern = {
         "pattern": "ma_tangle_breakout",
-        "pattern_name": "均線收斂突破",
-        "description": "四條均線緊密收斂（差距 < 5%），短線上翹，底部有支撐，今日突破 MA20 且昨天還在 MA60 以下。",
+        "pattern_name": "三線交纏帶量突破",
+        "description": "MA5/MA10/MA20 三線差距 < 3%（交纏蓄勢），昨日帶量（> 均量 1.5 倍）突破 MA60，今日確認站穩，前天仍在 MA60 以下。",
         "total_triggers": len(dates),
         "trigger_dates": [pd.Timestamp(d).strftime("%Y-%m-%d") for d in dates[-10:]],
+        "backtest_stats": backtest_stats,
         "current": {
             "triggered": now,
+            "setup_triggered": setup_triggered,
             "ma60_bonus": ma60_up,
             "ma60_direction": "up" if ma60_up else "down",
             "label": label,
@@ -357,16 +409,22 @@ def stock_pattern_scan(symbol: str):
             "ma20_slope": _slope(ma20),
             "ma60_slope": _slope(ma60),
             "close":      cur_close,
-            "ma20":       cur_ma20,
+            "ma20":       cur_ma60,
             "ma60":       cur_ma60,
-            "ma_spread":  spread,
+            "ma_spread":  three_spread,
+            "ma60_gap":       ma60_gap,
+            "ma60_gap_pct":   round(ma60_gap / cur_close * 100, 2) if ma60_gap and cur_close else None,
             "prev_close": prev_close,
-            "prev_ma60":  prev_ma60,
+            "prev_ma60":  day2_ma60,
+            "prev_vol":       prev_vol,
+            "vol_ma20":       prev_vol_ma,
+            "vol_threshold":  vol_threshold,
             "cond_tangle":      cond_tangle,
-            "cond_short_up":    cond_short_up,
-            "cond_above_ma20":  cond_above_ma20,
+            "cond_near_ma60":   cond_near_ma60,
+            "cond_short_up":    True,
+            "cond_above_ma20":  cond_above_ma60,
             "cond_first_break": cond_first_break,
-            "cond_support":     cond_support,
+            "cond_support":     cond_volume,
         },
     }
 
@@ -484,6 +542,15 @@ def stock_full(symbol: str, company_name: str = ""):
 def backtest_signals():
     """列出所有支援的回測訊號。"""
     return bt.list_signals()
+
+
+@app.get("/market/pattern-scan")
+def market_pattern_scan(mode: str = "both"):
+    """全市場三線交纏帶量突破型態掃描。mode: triggered | setup | both（預設）。
+    掃描 DB 中有日線資料的全部股票，回傳今日觸發或蓄勢中的個股清單。
+    第一次執行可能需要數分鐘（依股票數量而定）。"""
+    result = bt.scan_pattern_market(mode=mode)
+    return result
 
 
 @app.get("/market/chip-scan")

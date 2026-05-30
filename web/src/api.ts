@@ -31,6 +31,7 @@ export const api = {
   moneyFlow: (topN = 10) => get<import('./types').MoneyFlowResponse>('/market/money-flow', { top_n: topN }),
   bigOrders: (minAmount = 30000000, topN = 8) => get<{ available?: boolean; orders?: import('./types').BigOrder[] }>('/market/big-orders', { min_amount: minAmount, top_n: topN }),
   patternScan: (sym: string) => get<PatternScanResponse>(`/stock/${sym}/pattern-scan`),
+  marketPatternScan: (mode = 'both') => get<import('./types').MarketPatternScanResponse>('/market/pattern-scan', { mode }),
   signals: () => get<Record<string, string>>('/backtest/signals'),
   searchStock: (q: string, limit = 10) => get<{ results: { symbol: string; name: string; market: string }[] }>('/stock/search', { q, limit }),
   globalNews: (category = 'all', perCat = 8) => get('/market/global', { category, per_cat: perCat }),

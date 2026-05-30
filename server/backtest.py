@@ -96,36 +96,40 @@ def _best_four_sell_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def _ma_tangle_breakout_mask(df: pd.DataFrame) -> pd.Series:
-    """均線收斂突破形態（整合壓縮彈弓 + 均線糾結噴出）：
-    1. MA5/10/20/60 四線差距 < 收盤 5%（緊密收斂）
-    2. MA5、MA10 斜率 > 0（短線上翹，動能翻正）
-    3. 近10根底部有支撐（低點平台未被跌破）
-    4. 今日收盤站上 MA20（突破中期壓力）
-    5. 昨收在 MA60 以下（今日才是第一根穿越長線均線）
+    """三線交纏帶量突破 MA60：
+    1. MA5/MA10/MA20 三線差距 < 收盤 3%（三線交纏蓄勢）
+    2. 今日與昨日收盤均站上 MA60（連續 2 日確認站穩，昨突破今確認）
+    3. 前天收盤在 MA60 以下（突破剛發生，非長期站上）
+    4. 突破當日（昨日）成交量 > 20 日均量 × 1.5（帶量突破）
 
     加分條件（不影響觸發）：
     - MA60 上斜 → 長線無壓，力道最強
     - MA60 下斜 → 均線未轉，股價領先，爆發型訊號
     """
-    if not {"close", "low"}.issubset(df.columns) or len(df) < 65:
+    if not {"close", "low", "volume"}.issubset(df.columns) or len(df) < 65:
         return pd.Series(False, index=df.index)
 
-    slope_n = 3
     ma5  = df["close"].rolling(5).mean()
     ma10 = df["close"].rolling(10).mean()
     ma20 = df["close"].rolling(20).mean()
     ma60 = df["close"].rolling(60).mean()
+    vol_ma20 = df["volume"].rolling(20).mean()
 
-    ma_max = pd.concat([ma5, ma10, ma20, ma60], axis=1).max(axis=1)
-    ma_min = pd.concat([ma5, ma10, ma20, ma60], axis=1).min(axis=1)
+    # 三線交纏：MA5/10/20 最大值與最小值差距 < 收盤 3%
+    three_ma_max = pd.concat([ma5, ma10, ma20], axis=1).max(axis=1)
+    three_ma_min = pd.concat([ma5, ma10, ma20], axis=1).min(axis=1)
+    cond_tangle = (three_ma_max - three_ma_min) < (df["close"] * 0.03)
 
-    cond_tangle      = (ma_max - ma_min) < (df["close"] * 0.05)
-    cond_short_up    = ((ma5 - ma5.shift(slope_n)) > 0) & ((ma10 - ma10.shift(slope_n)) > 0)
-    cond_support     = df["low"] >= df["low"].rolling(10).min().shift(1) * 0.99
-    cond_above_ma20  = df["close"] > ma20
-    cond_prev_below_ma60 = df["close"].shift(1) <= ma60.shift(1)
+    # 連續 2 日站上 MA60（今日 = 確認日，昨日 = 突破日）
+    cond_today_above_ma60 = df["close"] > ma60
+    cond_prev_above_ma60  = df["close"].shift(1) > ma60.shift(1)
+    # 前天仍在 MA60 以下（突破剛發生）
+    cond_2d_below_ma60    = df["close"].shift(2) <= ma60.shift(2)
 
-    return cond_tangle & cond_short_up & cond_support & cond_above_ma20 & cond_prev_below_ma60
+    # 昨日（突破日）帶量：昨量 > 20 日均量 × 1.5
+    cond_volume = df["volume"].shift(1) > vol_ma20.shift(1) * 1.5
+
+    return cond_tangle & cond_today_above_ma60 & cond_prev_above_ma60 & cond_2d_below_ma60 & cond_volume
 
 
 # 向下相容：pattern-scan API 仍用此名稱
@@ -307,3 +311,140 @@ def run(
 
 def list_signals() -> dict:
     return SUPPORTED_SIGNALS
+
+
+# ──────────────────────────────────────────────
+# 全市場型態掃描
+# ──────────────────────────────────────────────
+
+def scan_pattern_market(
+    mode: str = "both",          # "triggered" | "setup" | "both"
+    min_history: int = 65,       # 最少需要的日線筆數（MA60 需要 60 根以上）
+) -> dict:
+    """
+    掃描全台股（DB 中已有資料的股票），找出今日符合三線交纏帶量突破型態的個股。
+
+    mode:
+      - "triggered" : 只回突破完成（四條件全符合）
+      - "setup"     : 只回蓄勢中（三線交纏 + 近 MA60）
+      - "both"      : 兩者都回（預設）
+
+    回傳：
+    {
+      scanned: 掃描股票數,
+      triggered: [...],   # 突破完成
+      setup: [...],       # 蓄勢中
+      as_of: 最後交易日
+    }
+    每筆 item: { symbol, name, close, ma60, ma60_gap_pct, ma60_direction, ma_spread, prev_vol, vol_threshold, last_trigger }
+    """
+    from sqlalchemy import select, func
+    from db import StockName, DailyPrice, get_session
+    from data_fetcher import get_price_df
+
+    # 取 DB 中有歷史資料的全部股票清單（附名稱）
+    with get_session() as session:
+        name_rows = session.execute(select(StockName)).scalars().all()
+        name_map = {r.symbol: r.name for r in name_rows}
+        # 取有日線資料的股票（至少 min_history 筆）
+        counted = session.execute(
+            select(DailyPrice.symbol, func.count(DailyPrice.id).label("cnt"))
+            .group_by(DailyPrice.symbol)
+            .having(func.count(DailyPrice.id) >= min_history)
+        ).all()
+    symbols = [r.symbol for r in counted]
+
+    triggered_list: list[dict] = []
+    setup_list: list[dict] = []
+    as_of: str | None = None
+
+    for symbol in symbols:
+        try:
+            df = get_price_df(symbol)
+        except Exception:
+            continue
+        if df is None or len(df) < min_history:
+            continue
+
+        df.index = pd.to_datetime(df.index)
+        close  = df["close"]
+        volume = df["volume"]
+
+        ma5      = close.rolling(5).mean()
+        ma10     = close.rolling(10).mean()
+        ma20     = close.rolling(20).mean()
+        ma60     = close.rolling(60).mean()
+        vol_ma20 = volume.rolling(20).mean()
+
+        if as_of is None and len(df) > 0:
+            as_of = df.index[-1].strftime("%Y-%m-%d")
+
+        # 取最後一列的值
+        if close.isna().iloc[-1] or ma60.isna().iloc[-1]:
+            continue
+        cur_close   = float(close.iloc[-1])
+        cur_ma60    = float(ma60.iloc[-1])
+
+        # ── 蓄勢條件
+        three_vals = [ma5.iloc[-1], ma10.iloc[-1], ma20.iloc[-1]]
+        if any(pd.isna(v) for v in three_vals):
+            continue
+        three_spread = float(max(three_vals) - min(three_vals))
+        threshold    = cur_close * 0.03
+        cond_tangle  = three_spread < threshold
+
+        ma60_gap       = abs(cur_close - cur_ma60)
+        cond_near_ma60 = ma60_gap < threshold
+        setup_now      = cond_tangle and cond_near_ma60
+
+        # ── 突破條件（_ma_tangle_breakout_mask 的最後一列）
+        mask    = _ma_tangle_breakout_mask(df).fillna(False)
+        trig_now = bool(mask.iloc[-1])
+
+        # 跳過兩者都不符合的
+        if not trig_now and not setup_now:
+            continue
+
+        # MA60 方向
+        ma60_bonus = bool(_ma60_bonus(df).iloc[-1]) if len(df) >= 65 else False
+
+        # 昨量資訊
+        prev_vol    = float(volume.iloc[-2]) if len(volume) >= 2 else None
+        prev_vol_ma = float(vol_ma20.iloc[-2]) if len(volume) >= 21 else None
+        vol_threshold = round(prev_vol_ma * 1.5) if prev_vol_ma else None
+
+        # 最近一次歷史觸發
+        trig_dates = df.index[mask].tolist()
+        last_trigger = pd.Timestamp(trig_dates[-1]).strftime("%Y-%m-%d") if trig_dates else None
+
+        item = {
+            "symbol":       symbol,
+            "name":         name_map.get(symbol, symbol),
+            "close":        round(cur_close, 2),
+            "ma60":         round(cur_ma60, 2),
+            "ma60_gap_pct": round(ma60_gap / cur_close * 100, 2),
+            "ma60_direction": "up" if ma60_bonus else "down",
+            "ma_spread":    round(three_spread, 2),
+            "ma_threshold": round(threshold, 2),
+            "prev_vol":     int(prev_vol) if prev_vol else None,
+            "vol_threshold": int(vol_threshold) if vol_threshold else None,
+            "last_trigger": last_trigger,
+            "total_triggers": len(trig_dates),
+        }
+
+        if trig_now:
+            triggered_list.append(item)
+        elif setup_now:
+            setup_list.append(item)
+
+    # 突破完成優先 MA60 上斜排前
+    triggered_list.sort(key=lambda x: (0 if x["ma60_direction"] == "up" else 1, x["ma60_gap_pct"]))
+    # 蓄勢中按距 MA60 距離升冪（最近最前）
+    setup_list.sort(key=lambda x: x["ma60_gap_pct"])
+
+    return {
+        "scanned": len(symbols),
+        "triggered": triggered_list if mode in ("triggered", "both") else [],
+        "setup": setup_list if mode in ("setup", "both") else [],
+        "as_of": as_of,
+    }

@@ -15,12 +15,40 @@ import OutlookPanel from './components/OutlookPanel'
 import GlobalPanel from './components/GlobalPanel'
 import FuturesPanel from './components/FuturesPanel'
 import MacroPanel from './components/MacroPanel'
+import MarketPatternScanPanel from './components/MarketPatternScanPanel'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '型態', '基本面', '新聞']
 
 // 穩定的空物件 reference — 避免每次 render 都產生新 `{}` 害 PriceChart effect 重跑
 const EMPTY_MAS: Record<string, MaPoint[]> = {}
+
+type ViewType = 'market' | 'stock' | 'global' | 'futures' | 'macro'
+const VALID_VIEWS: ViewType[] = ['market', 'stock', 'global', 'futures', 'macro']
+
+function readHash(): { view: ViewType; symbol: string; tab: string; tf: string } {
+  try {
+    const p = new URLSearchParams(location.hash.slice(1))
+    const view = (VALID_VIEWS.includes(p.get('view') as ViewType) ? p.get('view') : 'market') as ViewType
+    return {
+      view,
+      symbol: p.get('symbol') ?? '',
+      tab: p.get('tab') ?? '綜合研判',
+      tf: p.get('tf') ?? '1d',
+    }
+  } catch {
+    return { view: 'market', symbol: '', tab: '綜合研判', tf: '1d' }
+  }
+}
+
+function writeHash(view: ViewType, symbol: string, tab: string, tf: string) {
+  const p = new URLSearchParams()
+  p.set('view', view)
+  if (symbol) p.set('symbol', symbol)
+  p.set('tab', tab)
+  p.set('tf', tf)
+  history.replaceState(null, '', '#' + p.toString())
+}
 
 // K 線圖時間框架：當日（Fugle 盤中 5 分鐘）+ 由日 K 重採樣的 6 種；days = 抓取的日線天數
 const CHART_TFS: { tf: string; label: string; days: number }[] = [
@@ -68,15 +96,25 @@ function buildMas(priceData: PriceResponse | null, technicalData: TechnicalRespo
 }
 
 export default function App() {
-  const [symbol, setSymbol] = useState('')
-  const [input, setInput] = useState('')
-  const [activeTab, setActiveTab] = useState('綜合研判')
+  const [symbol, setSymbolState] = useState(() => readHash().symbol)
+  const [input, setInput] = useState(() => readHash().symbol)
+  const [activeTab, setActiveTabState] = useState(() => readHash().tab)
   const [btSignal, setBtSignal] = useState('ma_cross')
-  const [chartTf, setChartTf] = useState('1d')
-  const [view, setView] = useState<'market' | 'stock' | 'global' | 'futures' | 'macro'>('market')
+  const [chartTf, setChartTfState] = useState(() => readHash().tf)
+  const [view, setViewState] = useState<ViewType>(() => readHash().view)
   const [suggestions, setSuggestions] = useState<any[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const searchRef = useRef<HTMLFormElement>(null)
+
+  // 同步狀態到 hash — 每個 setter 都接收完整新值，避免 closure stale 問題
+  const setSymbol = (s: string, opts?: { view?: ViewType; tab?: string; tf?: string }) => {
+    const v = opts?.view ?? view; const t = opts?.tab ?? activeTab; const tf = opts?.tf ?? chartTf
+    setSymbolState(s); if (opts?.view) setViewState(v); if (opts?.tab) setActiveTabState(t); if (opts?.tf) setChartTfState(tf)
+    writeHash(v, s, t, tf)
+  }
+  const setActiveTab = (t: string) => { setActiveTabState(t); writeHash(view, symbol, t, chartTf) }
+  const setChartTf = (tf: string) => { setChartTfState(tf); writeHash(view, symbol, activeTab, tf) }
+  const setView = (v: ViewType) => { setViewState(v); writeHash(v, symbol, activeTab, chartTf) }
 
   // 大盤資料：法人資金動向 + 盤後統計（指數走勢由 MarketOverview 自行依時間區間抓取）
   const market = useAsync(() => api.moneyFlow(8), [])
@@ -126,18 +164,14 @@ export default function App() {
     setInput(s.symbol)
     setSuggestions([])
     setShowSuggestions(false)
-    setSymbol(s.symbol)
-    setView('stock')
-    setActiveTab('綜合研判')
+    setSymbol(s.symbol, { view: 'stock', tab: '綜合研判' })
   }
 
   // 從大盤排行等處點股票代碼 → 直接分析該股
   const goStock = (sym: string) => {
     setInput(sym)
     setShowSuggestions(false)
-    setSymbol(sym)
-    setView('stock')
-    setActiveTab('綜合研判')
+    setSymbol(sym, { view: 'stock', tab: '綜合研判' })
   }
 
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
@@ -147,9 +181,7 @@ export default function App() {
     setShowSuggestions(false)
     // 若輸入的是中文且有建議，直接用第一筆
     const resolved = (!v.match(/^\d/) && suggestions.length > 0) ? suggestions[0].symbol : v
-    setSymbol(resolved)
-    setView('stock')
-    setActiveTab('綜合研判')
+    setSymbol(resolved, { view: 'stock', tab: '綜合研判' })
   }
 
   return (
@@ -218,12 +250,19 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {view === 'market' && (
-          <Card title="大盤總覽">
-            {market.error && <p className="text-red-400 text-sm">{market.error}</p>}
-            <ErrorBoundary label="大盤總覽">
-              <MarketOverview moneyFlow={market.data} onSelectStock={goStock} />
-            </ErrorBoundary>
-          </Card>
+          <>
+            <Card title="大盤總覽">
+              {market.error && <p className="text-red-400 text-sm">{market.error}</p>}
+              <ErrorBoundary label="大盤總覽">
+                <MarketOverview moneyFlow={market.data} onSelectStock={goStock} />
+              </ErrorBoundary>
+            </Card>
+            <Card title="三線交纏帶量突破 — 全市場型態掃描">
+              <ErrorBoundary label="型態掃描">
+                <MarketPatternScanPanel onSelectStock={goStock} />
+              </ErrorBoundary>
+            </Card>
+          </>
         )}
 
         {view === 'global' && (
@@ -267,7 +306,7 @@ export default function App() {
                   <PriceChart
                     key={`${symbol}-${chartTf}`}
                     data={price.data.data}
-                    mas={chartTf === '1d' ? mas : EMPTY_MAS}
+                    mas={chartTf === 'intraday' ? EMPTY_MAS : mas}
                     intraday={chartTf === 'intraday'}
                     previousClose={chartTf === 'intraday' ? (price.data.previousClose ?? null) : null}
                   />
