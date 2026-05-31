@@ -33,6 +33,7 @@ export interface AsyncState<T> {
 
 export interface PriceResponse {
   symbol: string
+  name?: string
   tf?: string
   data: Bar[]
   // 盤中時 fugle.intraday_candles 會附加：
@@ -175,8 +176,9 @@ export interface PatternDiagnostics {
   vol_threshold?:    number | null
   ma60_gap?:         number | null
   ma60_gap_pct?:     number | null
-  cond_tangle?:      boolean
-  cond_near_ma60?:   boolean
+  cond_tangle?:       boolean
+  cond_above_three?:  boolean
+  cond_near_ma60?:    boolean
   cond_short_up?:    boolean
   cond_above_ma20?:  boolean
   cond_first_break?: boolean
@@ -242,6 +244,26 @@ export interface MarketPatternScanResponse {
   scanned: number
   triggered: MarketPatternItem[]
   setup: MarketPatternItem[]
+  as_of: string | null
+}
+
+// 全市場週線W底掃描（/market/weekly-w-bottom-scan）
+export interface WeeklyWBottomItem {
+  symbol: string
+  name: string
+  close: number
+  ma20w: number
+  ma20w_gap_pct: number
+  ma20w_direction: 'up' | 'down'
+  week_vol: number
+  vol_threshold: number | null
+  last_trigger: string | null
+  total_triggers: number
+}
+
+export interface WeeklyWBottomScanResponse {
+  scanned: number
+  triggered: WeeklyWBottomItem[]
   as_of: string | null
 }
 

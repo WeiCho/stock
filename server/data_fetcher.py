@@ -62,7 +62,10 @@ def fetch_twse_stock_month(symbol: str, year: int, month: int) -> pd.DataFrame:
     with _client(15) as client:
         resp = client.get(url, params=params)
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return pd.DataFrame()
 
     if data.get("stat") != "OK" or not data.get("data"):
         return pd.DataFrame()
@@ -105,10 +108,14 @@ def fetch_stock_history(symbol: str, years: int = 10, market: str = "twse") -> i
             target = _month_offset(today, i)
             y, m = target.year, target.month
 
-            if market == "twse":
-                df = fetch_twse_stock_month(symbol, y, m)
-            else:
-                df = fetch_tpex_stock_month(symbol, y, m)
+            try:
+                if market == "twse":
+                    df = fetch_twse_stock_month(symbol, y, m)
+                else:
+                    df = fetch_tpex_stock_month(symbol, y, m)
+            except Exception:
+                _sleep()
+                continue
 
             _sleep()
 
@@ -802,7 +809,11 @@ def ensure_stock_data(symbol: str) -> bool:
 
     inserted = 0
     for mkt in order:
-        inserted = fetch_stock_history(symbol, years=10, market=mkt)
+        try:
+            inserted = fetch_stock_history(symbol, years=10, market=mkt)
+        except Exception as e:
+            log.warning("%s %s 爬取例外：%s", symbol, mkt, e)
+            inserted = 0
         if inserted > 0:
             break
 

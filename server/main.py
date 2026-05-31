@@ -210,7 +210,10 @@ def stock_price(symbol: str, days: int = 60, tf: str = "1d"):
     if "date" not in df_res.columns and "index" in df_res.columns:
         df_res = df_res.rename(columns={"index": "date"})
     df_res["date"] = pd.to_datetime(df_res["date"]).dt.strftime("%Y-%m-%d")
-    return {"symbol": symbol, "tf": tf, "data": df_res.to_dict(orient="records")}
+    with get_session() as session:
+        name_row = session.execute(select(StockName).where(StockName.symbol == symbol)).scalar_one_or_none()
+    name = name_row.name if name_row else None
+    return {"symbol": symbol, "name": name, "tf": tf, "data": df_res.to_dict(orient="records")}
 
 
 @app.get("/stock/{symbol}/intraday")
@@ -335,8 +338,14 @@ def stock_pattern_scan(symbol: str):
     ma60_gap_threshold = round(float(cur_close * 0.03), 2) if cur_close else None
     cond_near_ma60 = ma60_gap is not None and ma60_gap_threshold is not None and ma60_gap < ma60_gap_threshold
 
-    # 蓄勢中：三線交纏 + 接近 MA60（尚未突破，可準備）
-    setup_triggered = cond_tangle and cond_near_ma60
+    # 收盤站上 MA5/10/20 三線
+    cond_above_three = (
+        three_vals and cur_close is not None
+        and all(cur_close > float(v) for v in three_vals)
+    )
+
+    # 蓄勢中：三線交纏 + 收盤站上三線 + 距 MA60 < 3%（尚未突破）
+    setup_triggered = cond_tangle and bool(cond_above_three) and cond_near_ma60
 
     # 今日與昨日均站上 MA60（連續 2 日）
     cond_above_ma60 = (cur_close is not None and cur_ma60 is not None and cur_close > cur_ma60 and
@@ -376,6 +385,8 @@ def stock_pattern_scan(symbol: str):
                 continue
             entry_price = float(daily.loc[entry_date, "close"])
             exit_price  = float(daily.loc[future[n - 1], "close"])
+            if not entry_price:
+                continue
             returns.append((exit_price - entry_price) / entry_price * 100)
             cooldown_until = future[n - 1]
         if returns:
@@ -394,7 +405,7 @@ def stock_pattern_scan(symbol: str):
         "pattern_name": "三線交纏帶量突破",
         "description": "MA5/MA10/MA20 三線差距 < 3%（交纏蓄勢），昨日帶量（> 均量 1.5 倍）突破 MA60，今日確認站穩，前天仍在 MA60 以下。",
         "total_triggers": len(dates),
-        "trigger_dates": [pd.Timestamp(d).strftime("%Y-%m-%d") for d in dates[-10:]],
+        "trigger_dates": [pd.Timestamp(d).strftime("%Y-%m-%d") for d in dates],
         "backtest_stats": backtest_stats,
         "current": {
             "triggered": now,
@@ -419,9 +430,10 @@ def stock_pattern_scan(symbol: str):
             "prev_vol":       prev_vol,
             "vol_ma20":       prev_vol_ma,
             "vol_threshold":  vol_threshold,
-            "cond_tangle":      cond_tangle,
-            "cond_near_ma60":   cond_near_ma60,
-            "cond_short_up":    True,
+            "cond_tangle":       cond_tangle,
+            "cond_above_three":  bool(cond_above_three),
+            "cond_near_ma60":    cond_near_ma60,
+            "cond_short_up":     True,
             "cond_above_ma20":  cond_above_ma60,
             "cond_first_break": cond_first_break,
             "cond_support":     cond_volume,
@@ -553,6 +565,12 @@ def market_pattern_scan(mode: str = "both"):
     return result
 
 
+@app.get("/market/weekly-w-bottom-scan")
+def market_weekly_w_bottom_scan():
+    """全市場週線W底突破掃描。"""
+    return bt.scan_weekly_w_bottom()
+
+
 @app.get("/market/chip-scan")
 def market_chip_scan(
     min_foreign_days: int = 3,
@@ -568,6 +586,165 @@ def market_chip_scan(
         order_by=order_by,
     )
     return {"data": results, "count": len(results)}
+
+
+# ──────────────────────────────────────────────
+# 類股前3產業個股下載 + 型態掃描
+# ──────────────────────────────────────────────
+
+def _get_sector_top3_symbols(top_n: int = 3) -> dict:
+    """取資金流入前 top_n 產業的個股代碼清單，回傳 {industry: [symbol, ...]}。"""
+    from data_fetcher import get_industry_map
+    flow = chip_module.sector_money_flow(top_n=top_n)
+    if "error" in flow:
+        return {}
+    top_industries = {s["industry"] for s in flow["inflow"][:top_n]}
+    industry_map = get_industry_map()
+    result: dict = {ind: [] for ind in top_industries}
+    for symbol, ind in industry_map.items():
+        if ind in top_industries:
+            result[ind].append(symbol)
+    return result
+
+
+@app.post("/admin/download-sector-top3")
+def admin_download_sector_top3(background_tasks: BackgroundTasks):
+    """下載資金流入前3產業的個股歷史資料進 DB（背景執行）。"""
+    sector_stocks = _get_sector_top3_symbols()
+    if not sector_stocks:
+        raise HTTPException(status_code=503, detail="法人資料尚未更新，無法取得類股排行")
+    all_symbols = [s for symbols in sector_stocks.values() for s in symbols]
+    unique = list(dict.fromkeys(all_symbols))
+    background_tasks.add_task(_run_download_symbols, unique)
+    summary = {ind: len(syms) for ind, syms in sector_stocks.items()}
+    return {
+        "status": "started",
+        "total_symbols": len(unique),
+        "sectors": summary,
+        "message": f"共 {len(unique)} 支個股歷史資料下載已在背景執行",
+    }
+
+
+def _run_download_symbols(symbols: list):
+    for symbol in symbols:
+        ensure_stock_data(symbol)
+        _time.sleep(1.2)
+
+
+@app.get("/market/sector-top3/pattern-scan")
+def sector_top3_pattern_scan(top_n: int = 3):
+    """對資金流入前 top_n 產業的個股批次跑三線交纏型態掃描，回傳有訊號的個股。"""
+    from backtest import _ma_tangle_breakout_mask, _ma60_bonus
+
+    sector_stocks = _get_sector_top3_symbols(top_n=top_n)
+    if not sector_stocks:
+        raise HTTPException(status_code=503, detail="法人資料尚未更新，無法取得類股排行")
+
+    all_symbols = [s for syms in sector_stocks.values() for s in syms]
+    unique = list(dict.fromkeys(all_symbols))
+
+    # 反查 symbol → industry
+    sym_to_ind = {s: ind for ind, syms in sector_stocks.items() for s in syms}
+
+    results = []
+    for symbol in unique:
+        try:
+            daily = get_price_df(symbol)
+            if daily is None or daily.empty or len(daily) < 65:
+                continue
+            daily.index = pd.to_datetime(daily.index)
+            close  = daily["close"]
+            volume = daily["volume"]
+            ma5    = close.rolling(5).mean()
+            ma10   = close.rolling(10).mean()
+            ma20   = close.rolling(20).mean()
+            ma60   = close.rolling(60).mean()
+            vol_ma20 = volume.rolling(20).mean()
+
+            mask   = _ma_tangle_breakout_mask(daily).fillna(False)
+            now    = bool(mask.iloc[-1])
+            ma60_up = bool(_ma60_bonus(daily).iloc[-1])
+
+            cur_close  = float(close.iloc[-1])
+            cur_ma60   = float(ma60.iloc[-1])
+            prev_close = float(close.iloc[-2])
+            prev_ma60  = float(ma60.iloc[-2])
+
+            three_vals = [float(ma5.iloc[-1]), float(ma10.iloc[-1]), float(ma20.iloc[-1])]
+            three_spread = max(three_vals) - min(three_vals)
+            cond_tangle  = pd.notna(ma5.iloc[-1]) and three_spread < cur_close * 0.03
+            ma60_gap     = abs(cur_close - cur_ma60)
+            cond_near_ma60 = ma60_gap < cur_close * 0.03
+            setup = cond_tangle and cond_near_ma60
+
+            if not now and not setup:
+                continue
+
+            label = (
+                "突破完成（MA60 上斜，力道最強）" if now and ma60_up
+                else "突破完成（MA60 下斜）" if now
+                else "蓄勢中，等待帶量突破 MA60"
+            )
+
+            # 基本回測勝率（5 日）
+            dates = daily.index[mask].tolist()
+            win_rate_5 = None
+            if dates:
+                returns = []
+                cooldown_until = None
+                for tdate in sorted(dates):
+                    if cooldown_until and pd.Timestamp(tdate) <= cooldown_until:
+                        continue
+                    prior = daily.index[daily.index <= tdate]
+                    if len(prior) == 0:
+                        continue
+                    future = daily.index[daily.index > prior[-1]]
+                    if len(future) < 5:
+                        continue
+                    ep = float(daily.loc[prior[-1], "close"])
+                    xp = float(daily.loc[future[4], "close"])
+                    if not ep:
+                        continue
+                    returns.append((xp - ep) / ep * 100)
+                    cooldown_until = future[4]
+                if returns:
+                    wins = sum(1 for r in returns if r > 0)
+                    win_rate_5 = round(wins / len(returns) * 100, 1)
+
+            # 取股名
+            with get_session() as session:
+                name_row = session.execute(
+                    select(StockName).where(StockName.symbol == symbol)
+                ).scalar_one_or_none()
+            name = name_row.name if name_row else symbol
+
+            results.append({
+                "symbol":        symbol,
+                "name":          name,
+                "industry":      sym_to_ind.get(symbol, ""),
+                "triggered":     now,
+                "setup_triggered": setup,
+                "ma60_bonus":    ma60_up,
+                "label":         label,
+                "close":         round(cur_close, 2),
+                "ma60":          round(cur_ma60, 2),
+                "ma60_gap_pct":  round(ma60_gap / cur_close * 100, 2),
+                "win_rate_5d":   win_rate_5,
+                "total_triggers": int(mask.sum()),
+            })
+        except Exception:
+            continue
+
+    results.sort(key=lambda x: (not x["triggered"], not x["setup_triggered"], -(x["win_rate_5d"] or 0)))
+
+    return {
+        "date": chip_module.sector_money_flow(top_n=top_n).get("date"),
+        "top_industries": list(sector_stocks.keys()),
+        "total_scanned": len(unique),
+        "triggered_count": sum(1 for r in results if r["triggered"]),
+        "setup_count":     sum(1 for r in results if r["setup_triggered"] and not r["triggered"]),
+        "results":         results,
+    }
 
 
 # ──────────────────────────────────────────────

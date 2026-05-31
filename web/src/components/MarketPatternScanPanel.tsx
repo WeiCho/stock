@@ -1,12 +1,19 @@
-import { useState } from 'react'
-import { api } from '../api'
 import type { MarketPatternScanResponse, MarketPatternItem } from '../types'
 
+type Mode = 'both' | 'triggered' | 'setup'
+
+export type { Mode as PatternScanMode }
+
 interface Props {
+  mode: Mode
+  onModeChange: (m: Mode) => void
+  data: MarketPatternScanResponse | null
+  loading: boolean
+  error: string | null
+  scannedAt: string | null
+  onRescan: () => void
   onSelectStock: (symbol: string) => void
 }
-
-type Mode = 'both' | 'triggered' | 'setup'
 
 function ItemRow({ item, onSelect }: { item: MarketPatternItem; onSelect: (s: string) => void }) {
   const isUp = item.ma60_direction === 'up'
@@ -95,31 +102,15 @@ function ResultTable({
   )
 }
 
-export default function MarketPatternScanPanel({ onSelectStock }: Props) {
-  const [mode, setMode] = useState<Mode>('both')
-  const [data, setData] = useState<MarketPatternScanResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [elapsed, setElapsed] = useState<number | null>(null)
+const MODES: { value: Mode; label: string }[] = [
+  { value: 'both',      label: '全部（突破 + 蓄勢）' },
+  { value: 'triggered', label: '突破完成' },
+  { value: 'setup',     label: '蓄勢中' },
+]
 
-  const run = () => {
-    setLoading(true)
-    setError(null)
-    setData(null)
-    setElapsed(null)
-    const t0 = Date.now()
-    api.marketPatternScan(mode)
-      .then(r => { setData(r); setElapsed(Math.round((Date.now() - t0) / 1000)) })
-      .catch(e => setError(e.message ?? '掃描失敗'))
-      .finally(() => setLoading(false))
-  }
-
-  const MODES: { value: Mode; label: string }[] = [
-    { value: 'both',      label: '全部（突破 + 蓄勢）' },
-    { value: 'triggered', label: '突破完成' },
-    { value: 'setup',     label: '蓄勢中' },
-  ]
-
+export default function MarketPatternScanPanel({
+  mode, onModeChange, data, loading, error, scannedAt, onRescan, onSelectStock,
+}: Props) {
   return (
     <div className="space-y-4">
       {/* 控制列 */}
@@ -128,7 +119,7 @@ export default function MarketPatternScanPanel({ onSelectStock }: Props) {
           {MODES.map(m => (
             <button
               key={m.value}
-              onClick={() => setMode(m.value)}
+              onClick={() => onModeChange(m.value)}
               className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
                 mode === m.value ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
               }`}
@@ -138,26 +129,25 @@ export default function MarketPatternScanPanel({ onSelectStock }: Props) {
           ))}
         </div>
         <button
-          onClick={run}
+          onClick={onRescan}
           disabled={loading}
-          className="text-sm px-4 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors"
+          className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 transition-colors"
         >
-          {loading ? '掃描中…' : '開始掃描全台股'}
+          {loading ? '掃描中…' : '重新掃描'}
         </button>
-        {data && (
-          <span className="text-xs text-slate-500">
-            掃描 {data.scanned} 檔 · {elapsed != null ? `耗時 ${elapsed}s` : ''} · 資料日 {data.as_of ?? '—'}
-          </span>
-        )}
+        <span className="text-xs text-slate-500">
+          {loading && '掃描中，首次約需 30–60 秒…'}
+          {!loading && data && `掃描 ${data.scanned} 檔 · 資料日 ${data.as_of ?? '—'} · ${scannedAt ? `${scannedAt} 更新` : ''}`}
+        </span>
       </div>
 
-      {/* 說明 */}
+      {/* 說明：首次掃描前顯示 */}
       {!data && !loading && !error && (
         <div className="bg-slate-800/60 rounded-lg p-4 text-xs text-slate-400 leading-relaxed space-y-1.5">
           <div className="text-slate-300 font-medium mb-1">三線交纏帶量突破 MA60 — 全市場掃描</div>
           <div>・<span className="text-orange-400 font-medium">突破完成</span>：MA5/10/20 三線交纏（差距 &lt; 3%）+ 昨日帶量（&gt; 均量 1.5×）+ 連 2 日站上 MA60 + 前天仍在 MA60 下</div>
-          <div>・<span className="text-blue-400 font-medium">蓄勢中</span>：三線交纏 + 收盤距 MA60 &lt; 3%（尚未突破，可準備觀察）</div>
-          <div className="text-slate-500 mt-2">第一次掃描視 DB 資料量約需 10–60 秒，後續因快取較快。點擊結果列可直接切換到個股分析。</div>
+          <div>・<span className="text-blue-400 font-medium">蓄勢中</span>：三線交纏 + 收盤站上 MA5/MA10/MA20 + 距 MA60 &lt; 3%（等待帶量突破）</div>
+          <div className="text-slate-500 mt-2">點擊「重新掃描」開始。第一次視 DB 資料量約需 10–60 秒，後續快取直接回傳。</div>
         </div>
       )}
 
@@ -172,7 +162,6 @@ export default function MarketPatternScanPanel({ onSelectStock }: Props) {
 
       {data && !loading && (
         <div className="space-y-6">
-          {/* 突破完成 */}
           {(mode === 'triggered' || mode === 'both') && (
             <div className="bg-slate-900/60 border border-orange-500/20 rounded-xl p-4">
               <ResultTable
@@ -186,7 +175,6 @@ export default function MarketPatternScanPanel({ onSelectStock }: Props) {
             </div>
           )}
 
-          {/* 蓄勢中 */}
           {(mode === 'setup' || mode === 'both') && (
             <div className="bg-slate-900/60 border border-blue-500/20 rounded-xl p-4">
               <ResultTable

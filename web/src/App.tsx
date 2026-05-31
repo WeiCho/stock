@@ -15,7 +15,9 @@ import OutlookPanel from './components/OutlookPanel'
 import GlobalPanel from './components/GlobalPanel'
 import FuturesPanel from './components/FuturesPanel'
 import MacroPanel from './components/MacroPanel'
-import MarketPatternScanPanel from './components/MarketPatternScanPanel'
+import MarketPatternScanPanel, { type PatternScanMode } from './components/MarketPatternScanPanel'
+import WeeklyWBottomScanPanel from './components/WeeklyWBottomScanPanel'
+import type { MarketPatternScanResponse, WeeklyWBottomScanResponse } from './types'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '型態', '基本面', '新聞']
@@ -23,8 +25,8 @@ const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '型態', '基
 // 穩定的空物件 reference — 避免每次 render 都產生新 `{}` 害 PriceChart effect 重跑
 const EMPTY_MAS: Record<string, MaPoint[]> = {}
 
-type ViewType = 'market' | 'stock' | 'global' | 'futures' | 'macro'
-const VALID_VIEWS: ViewType[] = ['market', 'stock', 'global', 'futures', 'macro']
+type ViewType = 'market' | 'stock' | 'global' | 'futures' | 'macro' | 'scan'
+const VALID_VIEWS: ViewType[] = ['market', 'stock', 'global', 'futures', 'macro', 'scan']
 
 function readHash(): { view: ViewType; symbol: string; tab: string; tf: string } {
   try {
@@ -118,6 +120,50 @@ export default function App() {
 
   // 大盤資料：法人資金動向 + 盤後統計（指數走勢由 MarketOverview 自行依時間區間抓取）
   const market = useAsync(() => api.moneyFlow(8), [])
+
+  // 全市場型態掃描 — state 住在 App，切頁面不重跑
+  const [scanMode, setScanMode] = useState<PatternScanMode>('both')
+  const [scanData, setScanData] = useState<MarketPatternScanResponse | null>(null)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [scanAt, setScanAt] = useState<string | null>(null)
+
+  const runScan = () => {
+    if (scanLoading) return
+    setScanLoading(true)
+    setScanError(null)
+    api.marketPatternScan(scanMode)
+      .then(r => { setScanData(r); setScanAt(new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })) })
+      .catch(e => setScanError(e.message ?? '掃描失敗'))
+      .finally(() => setScanLoading(false))
+  }
+
+  const handleScanModeChange = (m: PatternScanMode) => {
+    setScanMode(m)
+    if (scanLoading) return
+    setScanLoading(true)
+    setScanError(null)
+    api.marketPatternScan(m)
+      .then(r => { setScanData(r); setScanAt(new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })) })
+      .catch(e => setScanError(e.message ?? '掃描失敗'))
+      .finally(() => setScanLoading(false))
+  }
+
+  // 週線W底掃描
+  const [wScanData, setWScanData] = useState<WeeklyWBottomScanResponse | null>(null)
+  const [wScanLoading, setWScanLoading] = useState(false)
+  const [wScanError, setWScanError] = useState<string | null>(null)
+  const [wScanAt, setWScanAt] = useState<string | null>(null)
+
+  const runWScan = () => {
+    if (wScanLoading) return
+    setWScanLoading(true)
+    setWScanError(null)
+    api.weeklyWBottomScan()
+      .then(r => { setWScanData(r); setWScanAt(new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })) })
+      .catch(e => setWScanError(e.message ?? '掃描失敗'))
+      .finally(() => setWScanLoading(false))
+  }
 
   // 個股資料（當 symbol 改變時觸發）
   const price = useAsync(() => {
@@ -238,6 +284,10 @@ export default function App() {
               className={view === 'macro' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
               總經
             </button>
+            <button onClick={() => setView('scan')}
+              className={view === 'scan' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
+              掃描
+            </button>
             {symbol && (
               <button onClick={() => setView('stock')}
                 className={view === 'stock' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
@@ -250,19 +300,12 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {view === 'market' && (
-          <>
-            <Card title="大盤總覽">
-              {market.error && <p className="text-red-400 text-sm">{market.error}</p>}
-              <ErrorBoundary label="大盤總覽">
-                <MarketOverview moneyFlow={market.data} onSelectStock={goStock} />
-              </ErrorBoundary>
-            </Card>
-            <Card title="三線交纏帶量突破 — 全市場型態掃描">
-              <ErrorBoundary label="型態掃描">
-                <MarketPatternScanPanel onSelectStock={goStock} />
-              </ErrorBoundary>
-            </Card>
-          </>
+          <Card title="大盤總覽">
+            {market.error && <p className="text-red-400 text-sm">{market.error}</p>}
+            <ErrorBoundary label="大盤總覽">
+              <MarketOverview moneyFlow={market.data} onSelectStock={goStock} />
+            </ErrorBoundary>
+          </Card>
         )}
 
         {view === 'global' && (
@@ -287,10 +330,67 @@ export default function App() {
           </Card>
         )}
 
+        {view === 'scan' && (
+          <>
+            <Card title="三線交纏帶量突破 — 全市場掃描">
+              <ErrorBoundary label="三線交纏掃描">
+                <MarketPatternScanPanel
+                  mode={scanMode}
+                  onModeChange={handleScanModeChange}
+                  data={scanData}
+                  loading={scanLoading}
+                  error={scanError}
+                  scannedAt={scanAt}
+                  onRescan={runScan}
+                  onSelectStock={goStock}
+                />
+              </ErrorBoundary>
+            </Card>
+            <Card title="週線W底突破 — 全市場掃描">
+              <ErrorBoundary label="週線W底掃描">
+                <WeeklyWBottomScanPanel
+                  data={wScanData}
+                  loading={wScanLoading}
+                  error={wScanError}
+                  scannedAt={wScanAt}
+                  onRescan={runWScan}
+                  onSelectStock={goStock}
+                />
+              </ErrorBoundary>
+            </Card>
+          </>
+        )}
+
         {view === 'stock' && symbol && (
           <>
             {/* K 線圖 */}
-            <Card title={`${symbol} · K 線圖`}>
+            <Card>
+              {/* 股名 + 股價 大字 header */}
+              <div className="flex items-baseline gap-3 mb-3">
+                <span className="text-2xl font-bold text-white">
+                  {price.data?.name ?? symbol}
+                </span>
+                <span className="text-slate-400 text-base">{symbol}</span>
+                {(() => {
+                  const bars = price.data?.data
+                  const last = bars?.[bars.length - 1]
+                  if (!last) return null
+                  const prev = bars?.[bars.length - 2]
+                  const chg = prev ? last.close - prev.close : 0
+                  const chgPct = prev ? (chg / prev.close) * 100 : 0
+                  const up = chg >= 0
+                  return (
+                    <span className={`text-2xl font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>
+                      {last.close.toFixed(2)}
+                      <span className="text-sm font-normal ml-2">
+                        {up ? '+' : ''}{chg.toFixed(2)} ({up ? '+' : ''}{chgPct.toFixed(2)}%)
+                      </span>
+                    </span>
+                  )
+                })()}
+              </div>
+
+              {/* 時間框架切換 */}
               <div className="flex flex-wrap gap-1 mb-3">
                 {CHART_TFS.map(o => (
                   <button key={o.tf} onClick={() => setChartTf(o.tf)}
@@ -311,6 +411,25 @@ export default function App() {
                     previousClose={chartTf === 'intraday' ? (price.data.previousClose ?? null) : null}
                   />
                 </ErrorBoundary>
+              )}
+
+              {/* 均線圖例（日K 才顯示） */}
+              {chartTf !== 'intraday' && price.data && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
+                  {([
+                    { key: 'ma5',  label: 'MA5',  color: '#f59e0b' },
+                    { key: 'ma10', label: 'MA10', color: '#a78bfa' },
+                    { key: 'ma20', label: 'MA20', color: '#38bdf8' },
+                    { key: 'ma60', label: 'MA60', color: '#fb7185' },
+                    { key: 'ma120', label: 'MA120', color: '#4ade80' },
+                    { key: 'ma240', label: 'MA240', color: '#f97316' },
+                  ] as const).filter(m => mas[m.key]?.length).map(m => (
+                    <span key={m.key} className="flex items-center gap-1">
+                      <span className="inline-block w-5 h-0.5 rounded" style={{ backgroundColor: m.color }} />
+                      <span style={{ color: m.color }}>{m.label}</span>
+                    </span>
+                  ))}
+                </div>
               )}
             </Card>
 

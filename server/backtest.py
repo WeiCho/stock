@@ -28,8 +28,8 @@ SUPPORTED_SIGNALS = {
     # twstock BestFourPoint 四大買賣點（負/正乖離率 pivot + 任一量價/均線條件）
     "best_four_buy":   "四大買點（量價/均線 + 負乖離反彈，twstock）",
     "best_four_sell":  "四大賣點（量價/均線 + 正乖離反轉，twstock）",
-    # 均線收斂突破：四線糾結 + MA5/10上翹 + 昨在MA60下 + 今突破MA20
-    "ma_tangle_breakout": "均線收斂突破（四線糾結＋短線上翹＋首根突破MA60）",
+    # 週線W底突破：站上週MA20（首次）＋均線上斜＋W底底底高＋爆大量
+    "weekly_w_bottom":    "週線W底突破（站上週MA20＋趨勢線突破＋W底＋爆量）",
 }
 
 
@@ -148,7 +148,100 @@ def _ma60_bonus(df: pd.DataFrame) -> pd.Series:
 _slingshot_ma60_bonus = _ma60_bonus
 
 
-WEEKLY_SIGNALS = {"weekly_ma_cross"}
+def _weekly_w_bottom_mask(df: pd.DataFrame) -> pd.Series:
+    """週線W底突破 — 四個條件同時成立才觸發：
+
+    條件1（站上週MA20，首次）：
+        本週收盤 > 週MA20，且上週收盤 ≤ 週MA20。
+
+    條件2（趨勢線突破 / MA20上斜）：
+        週MA20 本週值 > 3週前值（均線方向向上）。
+
+    條件3（W底 — 底底高）：
+        在最近 40 週內偵測兩個局部低點：
+        - 局部低點定義：某週 low 低於前後各 2 週的 low。
+        - 第二低點的 low > 第一低點的 low（底底高）。
+        - 兩底之間有一個峰值，峰值需比兩底高出 3% 以上（確認W形）。
+        - 第二低點距本週不超過 16 週（確認是近期築底）。
+
+    條件4（爆大量）：
+        本週成交量 > 近 10 週均量 × 1.5 倍。
+    """
+    false = pd.Series(False, index=df.index)
+    if not {"close", "low", "high", "volume"}.issubset(df.columns) or len(df) < 45:
+        return false
+
+    ma20 = df["close"].rolling(20).mean()
+    vol_ma10 = df["volume"].rolling(10).mean()
+
+    n = len(df)
+    result = np.zeros(n, dtype=bool)
+
+    for i in range(44, n):
+        # ── 條件1：本週剛站上 MA20
+        c20_cur  = ma20.iloc[i]
+        c20_prev = ma20.iloc[i - 1]
+        if pd.isna(c20_cur) or pd.isna(c20_prev):
+            continue
+        if not (df["close"].iloc[i] > c20_cur and df["close"].iloc[i - 1] <= c20_prev):
+            continue
+
+        # ── 條件2：MA20 上斜（本週 > 3週前）
+        if i < 3 or pd.isna(ma20.iloc[i - 3]):
+            continue
+        if not (c20_cur > ma20.iloc[i - 3]):
+            continue
+
+        # ── 條件3：近 40 週內找 W 底
+        window_start = max(0, i - 39)
+        lows  = df["low"].iloc[window_start : i + 1].values
+        highs = df["high"].iloc[window_start : i + 1].values
+        wlen  = len(lows)
+
+        # 找局部低點（前後各 2 根都比它高）
+        local_troughs: list[tuple[int, float]] = []
+        for k in range(2, wlen - 2):
+            v = lows[k]
+            if v < lows[k-1] and v < lows[k-2] and v < lows[k+1] and v < lows[k+2]:
+                local_troughs.append((k, v))
+
+        if len(local_troughs) < 2:
+            continue
+
+        # 取最後兩個低點
+        t1_idx, t1_low = local_troughs[-2]
+        t2_idx, t2_low = local_troughs[-1]
+
+        # 第二低點比第一低點高（底底高）
+        if not (t2_low > t1_low):
+            continue
+
+        # 兩底之間要有峰值（W 中間隆起 ≥ 兩底均值的 3%）
+        if t2_idx <= t1_idx + 1:
+            continue
+        mid_peak = highs[t1_idx : t2_idx + 1].max()
+        two_bottom_avg = (t1_low + t2_low) / 2
+        if mid_peak < two_bottom_avg * 1.03:
+            continue
+
+        # 第二低點距本週不超過 16 週
+        bars_since_t2 = (wlen - 1) - t2_idx
+        if bars_since_t2 > 16:
+            continue
+
+        # ── 條件4：本週爆量
+        vma = vol_ma10.iloc[i]
+        if pd.isna(vma) or vma <= 0:
+            continue
+        if not (df["volume"].iloc[i] > vma * 1.5):
+            continue
+
+        result[i] = True
+
+    return pd.Series(result, index=df.index)
+
+
+WEEKLY_SIGNALS = {"weekly_ma_cross", "weekly_w_bottom"}
 
 
 def _signal_frame(daily: pd.DataFrame, signal: str) -> pd.DataFrame:
@@ -213,6 +306,9 @@ def _detect_trigger(df: pd.DataFrame, signal: str) -> pd.Series:
 
     if signal == "ma_tangle_breakout":
         return _ma_tangle_breakout_mask(df)
+
+    if signal == "weekly_w_bottom":
+        return _weekly_w_bottom_mask(df)
 
     return false
 
@@ -281,6 +377,8 @@ def run(
                 continue
             entry_price = daily.loc[entry_date, "close"]
             exit_price = daily.loc[future_dates[n - 1], "close"]
+            if not entry_price:
+                continue
             returns.append((exit_price - entry_price) / entry_price * 100)
 
         if not returns:
@@ -317,6 +415,8 @@ def list_signals() -> dict:
 # 全市場型態掃描
 # ──────────────────────────────────────────────
 
+_scan_cache: dict = {}   # key: (date, mode) → result dict
+
 def scan_pattern_market(
     mode: str = "both",          # "triggered" | "setup" | "both"
     min_history: int = 65,       # 最少需要的日線筆數（MA60 需要 60 根以上）
@@ -338,9 +438,15 @@ def scan_pattern_market(
     }
     每筆 item: { symbol, name, close, ma60, ma60_gap_pct, ma60_direction, ma_spread, prev_vol, vol_threshold, last_trigger }
     """
+    import datetime
     from sqlalchemy import select, func
     from db import StockName, DailyPrice, get_session
     from data_fetcher import get_price_df
+
+    today = datetime.date.today().isoformat()
+    cache_key = (today, mode)
+    if cache_key in _scan_cache:
+        return _scan_cache[cache_key]
 
     # 取 DB 中有歷史資料的全部股票清單（附名稱）
     with get_session() as session:
@@ -393,9 +499,13 @@ def scan_pattern_market(
         threshold    = cur_close * 0.03
         cond_tangle  = three_spread < threshold
 
+        # 收盤站上 MA5/10/20 三線（已在均線上方，等待突破 MA60）
+        cond_above_three = all(cur_close > v for v in three_vals)
+
         ma60_gap       = abs(cur_close - cur_ma60)
         cond_near_ma60 = ma60_gap < threshold
-        setup_now      = cond_tangle and cond_near_ma60
+        # 蓄勢：三線交纏 + 收盤站上三線 + 距 MA60 < 3%（尚未突破）
+        setup_now      = cond_tangle and cond_above_three and cond_near_ma60
 
         # ── 突破條件（_ma_tangle_breakout_mask 的最後一列）
         mask    = _ma_tangle_breakout_mask(df).fillna(False)
@@ -442,9 +552,115 @@ def scan_pattern_market(
     # 蓄勢中按距 MA60 距離升冪（最近最前）
     setup_list.sort(key=lambda x: x["ma60_gap_pct"])
 
-    return {
+    result = {
         "scanned": len(symbols),
         "triggered": triggered_list if mode in ("triggered", "both") else [],
         "setup": setup_list if mode in ("setup", "both") else [],
         "as_of": as_of,
     }
+    _scan_cache[cache_key] = result
+    return result
+
+
+# ──────────────────────────────────────────────
+# 全市場週線W底掃描
+# ──────────────────────────────────────────────
+
+_w_scan_cache: dict = {}
+
+
+def scan_weekly_w_bottom(min_history: int = 150) -> dict:
+    """
+    掃描全台股，找出今日符合週線W底突破條件的個股。
+
+    回傳：
+    {
+      scanned: int,
+      triggered: [...],   # 四條件全符合
+      as_of: str,
+    }
+    每筆 item: { symbol, name, close, ma20w, ma20w_gap_pct, ma20w_direction,
+                 week_vol, vol_threshold, last_trigger, total_triggers }
+    """
+    import datetime
+    from sqlalchemy import select, func
+    from db import StockName, DailyPrice, get_session
+    from data_fetcher import get_price_df
+    from technical import to_weekly
+
+    today = datetime.date.today().isoformat()
+    if today in _w_scan_cache:
+        return _w_scan_cache[today]
+
+    with get_session() as session:
+        name_rows = session.execute(select(StockName)).scalars().all()
+        name_map = {r.symbol: r.name for r in name_rows}
+        counted = session.execute(
+            select(DailyPrice.symbol, func.count(DailyPrice.id).label("cnt"))
+            .group_by(DailyPrice.symbol)
+            .having(func.count(DailyPrice.id) >= min_history)
+        ).all()
+    symbols = [r.symbol for r in counted]
+
+    triggered_list: list[dict] = []
+    as_of: str | None = None
+
+    for symbol in symbols:
+        try:
+            daily = get_price_df(symbol)
+        except Exception:
+            continue
+        if daily is None or len(daily) < min_history:
+            continue
+
+        daily.index = pd.to_datetime(daily.index)
+        wk = to_weekly(daily)
+        if len(wk) < 45:
+            continue
+
+        if as_of is None:
+            as_of = wk.index[-1].strftime("%Y-%m-%d")
+
+        mask = _weekly_w_bottom_mask(wk).fillna(False)
+        if not bool(mask.iloc[-1]):
+            continue
+
+        close_w  = wk["close"]
+        vol_w    = wk["volume"]
+        ma20w    = close_w.rolling(20).mean()
+        vol_ma10 = vol_w.rolling(10).mean()
+
+        cur_close = float(close_w.iloc[-1])
+        cur_ma20  = float(ma20w.iloc[-1])
+        ma20_prev3 = float(ma20w.iloc[-4]) if len(wk) >= 4 and not pd.isna(ma20w.iloc[-4]) else None
+        ma20_up   = bool(ma20_prev3 is not None and cur_ma20 > ma20_prev3)
+
+        cur_vol    = float(vol_w.iloc[-1])
+        vma        = float(vol_ma10.iloc[-1]) if not pd.isna(vol_ma10.iloc[-1]) else None
+        vol_thresh = round(vma * 1.5) if vma else None
+
+        trig_dates = wk.index[mask].tolist()
+        last_trigger = pd.Timestamp(trig_dates[-1]).strftime("%Y-%m-%d") if trig_dates else None
+
+        triggered_list.append({
+            "symbol":        symbol,
+            "name":          name_map.get(symbol, symbol),
+            "close":         round(cur_close, 2),
+            "ma20w":         round(cur_ma20, 2),
+            "ma20w_gap_pct": round(abs(cur_close - cur_ma20) / cur_close * 100, 2),
+            "ma20w_direction": "up" if ma20_up else "down",
+            "week_vol":      int(cur_vol),
+            "vol_threshold": int(vol_thresh) if vol_thresh else None,
+            "last_trigger":  last_trigger,
+            "total_triggers": len(trig_dates),
+        })
+
+    triggered_list.sort(key=lambda x: (0 if x["ma20w_direction"] == "up" else 1, x["ma20w_gap_pct"]))
+
+    result = {
+        "scanned":   len(symbols),
+        "triggered": triggered_list,
+        "as_of":     as_of,
+    }
+    _w_scan_cache[today] = result
+    return result

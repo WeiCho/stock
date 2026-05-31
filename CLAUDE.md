@@ -108,6 +108,9 @@ cd web; npm run dev   # → http://localhost:5173
 | `/market/macro/series/{series_id}` | 單一 FRED series |
 | `/backtest/signals` | 11 種訊號清單 |
 | `/admin/init-all` | 全台股歷史下載（背景，1-2 小時）|
+| `/admin/download-sector-top3` | 資金流入前3產業個股歷史下載（背景）|
+| `/market/pattern-scan` | 全市場型態掃描（當日快取，同日第二次起秒回）|
+| `/market/sector-top3/pattern-scan` | 前3產業個股型態掃描 |
 | `/health` | 健康檢查 |
 
 ## 分析模組
@@ -125,6 +128,16 @@ cd web; npm run dev   # → http://localhost:5173
 - **突破判定**：四條件全符合 → `triggered: true`，觸發完整回測統計
 
 回測以**冷卻期去重**確保樣本獨立：每次觸發後，間隔持有天數內的重複觸發不計入（避免連續觸發重複計算同一段行情）。
+
+`scan_pattern_market()` 有 **當日 in-memory 快取**（`_scan_cache`，key = date + mode），同一天重複呼叫直接回傳，隔天自動失效。
+
+**已知地雷**：部分股票（尤其剛上市或資料缺漏）收盤價為 0，回測計算 `(exit - entry) / entry` 會產生 `inf`，導致 JSON 序列化失敗（`ValueError: Out of range float values are not JSON compliant`）。所有回測除法前必須先 guard `if not entry_price: continue`。
+
+`_weekly_w_bottom_mask(df)` 實作「週線W底突破」四個條件（週K框架）：
+1. 本週收盤 > 週MA20，且上週收盤 ≤ 週MA20（剛站上，首次突破）
+2. 週MA20 本週值 > 3週前值（均線上斜 = 趨勢線方向向上）
+3. 近 40 週內有 W 底：局部低點底底高（第二底 > 第一底），兩底之間有峰值高出均值 3% 以上，第二底距今 ≤ 16 週
+4. 本週量 > 近 10 週均量 × 1.5（爆量突破）
 
 ### technical.py
 - `daily` / `weekly` 兩種時間框架，週K 由日K resample（W-FRI）
@@ -162,6 +175,11 @@ cd web; npm run dev   # → http://localhost:5173
 4. **總經** — MacroPanel：5 層 macro 框架
 5. **個股** — 7 時間框架 K 線 + 7 個 tab（綜合研判/技術/籌碼/回測/型態/基本面/新聞）
 
+### 個股 K 線 header
+- `price.data.name` 顯示股票名稱（後端 `/stock/{symbol}/price` 回傳 `name` 欄位，查 `StockName` table）
+- 最新股價與漲跌幅從 `price.data.data` 最後兩筆 bar 計算，台灣慣例漲紅跌綠
+- 均線圖例顯示在 K 線圖正下方（日K 才顯示，`intraday` 隱藏）；顏色與 `MA_COLORS` 一致：MA5 #f59e0b / MA10 #a78bfa / MA20 #38bdf8 / MA60 #fb7185 / MA120 #4ade80 / MA240 #f97316
+
 ### PriceChart（K 線元件）
 - **盤中**：BaselineSeries（昨收為基準上紅下綠 + 均價線 + rightOffset 補滿交易時段）
 - **非盤中**：CandlestickSeries + MA 疊圖（5/10/20/60）+ 量能副圖（pane 1）
@@ -172,6 +190,13 @@ cd web; npm run dev   # → http://localhost:5173
 - 副圖刻度隱藏：用 `series.priceScale().applyOptions({ borderVisible: false })`，**不要用 `visible: false`**（會把主圖 right scale 寬度壓成 0）
 - 容器需給明確高度（`style={{ height: 520 }}`），否則 lightweight-charts 抓到 clientHeight=0 導致渲染失敗
 - ResizeObserver callback 先 guard `chartRef.current` 存在，避免 chart remove 後觸發 null 錯誤
+
+### MarketPatternScanPanel（全市場型態掃描）
+- 掃描 state（data / loading / error / scannedAt）住在 **App 層**，切換 view 不重跑
+- `MarketPatternScanPanel` 是純展示元件，透過 props 接收資料與 callback
+- **不要在元件內用 `useEffect` 自動 fetch** — 會在每次 mount 時重新掃描
+- 後端有當日快取，「重新掃描」按鈕觸發的第二次以後都是秒回
+- 下載產業個股：`POST /admin/download-sector-top3`（後端 background task，不可用獨立 Python 腳本直接寫 DB，會 `database is locked`）
 
 ### PatternPanel（型態掃描面板）
 - **蓄勢條件**（`setup_triggered`）：三線交纏 + 距 MA60 < 3% → 藍色「蓄勢中」badge

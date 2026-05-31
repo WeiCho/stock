@@ -24,7 +24,7 @@ function buildReasons(p: PatternResult) {
   const ma60Up    = p.current.ma60_direction === 'up'
   const ma60Slope = d.ma60_slope
 
-  // 第一層：蓄勢條件（三線交纏 + 接近 MA60）
+  // 第一層：蓄勢條件（三線交纏 + 站上三線 + 接近 MA60）
   const setup = [
     {
       ok: d.cond_tangle ?? false,
@@ -33,10 +33,16 @@ function buildReasons(p: PatternResult) {
         : 'MA5/MA10/MA20 三線差距資料不足',
     },
     {
+      ok: d.cond_above_three ?? false,
+      text: d.close != null
+        ? `收盤 ${d.close} 站上 MA5/MA10/MA20 三線`
+        : '收盤須站上 MA5/MA10/MA20 三線',
+    },
+    {
       ok: d.cond_near_ma60 ?? false,
       text: d.ma60_gap != null && d.ma60 != null && d.ma60_gap_pct != null
-        ? `收盤距 MA60（${d.ma60}）僅差 ${d.ma60_gap}（${d.ma60_gap_pct}%），蓄勢待突破`
-        : '收盤接近 MA60（差距 < 3%），蓄勢待突破',
+        ? `收盤距 MA60（${d.ma60}）僅差 ${d.ma60_gap}（${d.ma60_gap_pct}%），等待突破`
+        : '收盤距 MA60 < 3%，等待帶量突破',
     },
   ]
 
@@ -189,13 +195,10 @@ function PatternCard({ p }: { p: PatternResult }) {
 
       {/* 歷史觸發 */}
       <div className="bg-slate-800/60 rounded-lg p-3">
-        <div className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">歷史觸發（近10年）</div>
-        <div className="text-2xl font-bold text-slate-100">
-          {p.total_triggers} <span className="text-sm font-normal text-slate-400">次</span>
-        </div>
+        <div className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">歷史觸發（近10年，共 {p.total_triggers} 次）</div>
         {p.trigger_dates.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {p.trigger_dates.slice(-8).map(d => (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {p.trigger_dates.map(d => (
               <span key={d} className="text-xs bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono">{d}</span>
             ))}
           </div>
