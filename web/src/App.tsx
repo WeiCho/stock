@@ -1,66 +1,78 @@
-import { useState, useEffect, useMemo, useRef, ReactNode } from 'react'
+import { useState, useEffect, useMemo, useRef, ReactNode, lazy, Suspense } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from './api'
+import { toggleLang } from './i18n'
 import type { Bar, MaPoint } from './types'
+import type { PatternScanMode } from './components/MarketPatternScanPanel'
+import type { MarketPatternScanResponse, WeeklyWBottomScanResponse } from './types'
 import { useAsync } from './hooks/useAsync'
 import { toTime as normalizeTime } from './lib/charts'
-import PriceChart from './components/PriceChart'
-import TechnicalPanel from './components/TechnicalPanel'
-import ChipPanel from './components/ChipPanel'
-import BacktestPanel from './components/BacktestPanel'
-import PatternPanel from './components/PatternPanel'
-import FundamentalsPanel from './components/FundamentalsPanel'
-import NewsPanel from './components/NewsPanel'
-import MarketOverview from './components/MarketOverview'
-import OutlookPanel from './components/OutlookPanel'
-import GlobalPanel from './components/GlobalPanel'
-import FuturesPanel from './components/FuturesPanel'
-import MacroPanel from './components/MacroPanel'
-import MarketPatternScanPanel, { type PatternScanMode } from './components/MarketPatternScanPanel'
-import WeeklyWBottomScanPanel from './components/WeeklyWBottomScanPanel'
-import type { MarketPatternScanResponse, WeeklyWBottomScanResponse } from './types'
+
+// Shell 必要 — eager
 import ErrorBoundary from './components/ErrorBoundary'
 
-const TABS = ['綜合研判', '技術面', '籌碼面', '回測', '型態', '基本面', '新聞']
+// MarketOverview + PriceChart 都用 lightweight-charts (~150KB)；
+// 全部 lazy 化讓 Vite 自動抽出 shared chunk，初次載入只下載 ~200KB main bundle
+const MarketOverview = lazy(() => import('./components/MarketOverview'))
+const PriceChart = lazy(() => import('./components/PriceChart'))
+const LiveQuote = lazy(() => import('./components/LiveQuote'))
+const TechnicalPanel = lazy(() => import('./components/TechnicalPanel'))
+const ChipPanel = lazy(() => import('./components/ChipPanel'))
+const BacktestPanel = lazy(() => import('./components/BacktestPanel'))
+const PatternPanel = lazy(() => import('./components/PatternPanel'))
+const FundamentalsPanel = lazy(() => import('./components/FundamentalsPanel'))
+const NewsPanel = lazy(() => import('./components/NewsPanel'))
+const OutlookPanel = lazy(() => import('./components/OutlookPanel'))
+const GlobalPanel = lazy(() => import('./components/GlobalPanel'))
+const FuturesPanel = lazy(() => import('./components/FuturesPanel'))
+const MacroPanel = lazy(() => import('./components/MacroPanel'))
+const CompareChart = lazy(() => import('./components/CompareChart'))
+const WatchlistPanel = lazy(() => import('./components/WatchlistPanel'))
+const MarketPatternScanPanel = lazy(() => import('./components/MarketPatternScanPanel'))
+const WeeklyWBottomScanPanel = lazy(() => import('./components/WeeklyWBottomScanPanel'))
 
-// 穩定的空物件 reference — 避免每次 render 都產生新 `{}` 害 PriceChart effect 重跑
-const EMPTY_MAS: Record<string, MaPoint[]> = {}
+// Tab key（中英文 label 透過 i18n 查表）
+const TAB_KEYS = ['outlook', 'technical', 'chip', 'backtest', 'pattern', 'fundamentals', 'news'] as const
+type TabKey = typeof TAB_KEYS[number]
 
-type ViewType = 'market' | 'stock' | 'global' | 'futures' | 'macro' | 'scan'
-const VALID_VIEWS: ViewType[] = ['market', 'stock', 'global', 'futures', 'macro', 'scan']
+type ViewType = 'market' | 'stock' | 'global' | 'futures' | 'macro' | 'scan' | 'compare' | 'watchlist'
+const VALID_VIEWS = ['market', 'stock', 'global', 'futures', 'macro', 'scan', 'compare', 'watchlist'] as const
 
-function readHash(): { view: ViewType; symbol: string; tab: string; tf: string } {
+// URL hash 深連結：載入時讀 #view=…&symbol=…&tab=…&tf=…，狀態變動時 replaceState 寫回（可分享/重整保留）
+function readHash(): { view: ViewType; symbol: string; tab: TabKey; tf: string } {
   try {
     const p = new URLSearchParams(location.hash.slice(1))
-    const view = (VALID_VIEWS.includes(p.get('view') as ViewType) ? p.get('view') : 'market') as ViewType
+    const v = p.get('view'); const tb = p.get('tab')
     return {
-      view,
+      view: (v && (VALID_VIEWS as readonly string[]).includes(v) ? v : 'market') as ViewType,
       symbol: p.get('symbol') ?? '',
-      tab: p.get('tab') ?? '綜合研判',
+      tab: (tb && (TAB_KEYS as readonly string[]).includes(tb) ? tb : 'outlook') as TabKey,
       tf: p.get('tf') ?? '1d',
     }
   } catch {
-    return { view: 'market', symbol: '', tab: '綜合研判', tf: '1d' }
+    return { view: 'market', symbol: '', tab: 'outlook', tf: '1d' }
   }
 }
-
 function writeHash(view: ViewType, symbol: string, tab: string, tf: string) {
   const p = new URLSearchParams()
   p.set('view', view)
   if (symbol) p.set('symbol', symbol)
-  p.set('tab', tab)
-  p.set('tf', tf)
+  p.set('tab', tab); p.set('tf', tf)
   history.replaceState(null, '', '#' + p.toString())
 }
 
-// K 線圖時間框架：當日（Fugle 盤中 5 分鐘）+ 由日 K 重採樣的 6 種；days = 抓取的日線天數
-const CHART_TFS: { tf: string; label: string; days: number }[] = [
-  { tf: 'intraday', label: '當日', days: 0 },
-  { tf: '1d', label: '日K', days: 120 },
-  { tf: '3d', label: '3日', days: 240 },
-  { tf: '5d', label: '5日', days: 240 },
-  { tf: '1w', label: '週K', days: 365 },
-  { tf: '3w', label: '3週', days: 730 },
-  { tf: '1mo', label: '月K', days: 1825 },
+// 穩定的空物件 reference — 避免每次 render 都產生新 `{}` 害 PriceChart effect 重跑
+const EMPTY_MAS: Record<string, MaPoint[]> = {}
+
+// K 線圖時間框架：tf = 對應後端參數 + i18n key，days = 抓取的日線天數
+const CHART_TFS: { tf: string; days: number }[] = [
+  { tf: 'intraday', days: 0 },
+  { tf: '1d', days: 120 },
+  { tf: '3d', days: 240 },
+  { tf: '5d', days: 240 },
+  { tf: '1w', days: 365 },
+  { tf: '3w', days: 730 },
+  { tf: '1mo', days: 1825 },
 ]
 
 function Spinner() {
@@ -98,9 +110,10 @@ function buildMas(priceData: PriceResponse | null, technicalData: TechnicalRespo
 }
 
 export default function App() {
+  const { t, i18n } = useTranslation()
   const [symbol, setSymbolState] = useState(() => readHash().symbol)
   const [input, setInput] = useState(() => readHash().symbol)
-  const [activeTab, setActiveTabState] = useState(() => readHash().tab)
+  const [activeTab, setActiveTabState] = useState<TabKey>(() => readHash().tab)
   const [btSignal, setBtSignal] = useState('ma_cross')
   const [chartTf, setChartTfState] = useState(() => readHash().tf)
   const [view, setViewState] = useState<ViewType>(() => readHash().view)
@@ -108,57 +121,43 @@ export default function App() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const searchRef = useRef<HTMLFormElement>(null)
 
-  // 同步狀態到 hash — 每個 setter 都接收完整新值，避免 closure stale 問題
-  const setSymbol = (s: string, opts?: { view?: ViewType; tab?: string; tf?: string }) => {
-    const v = opts?.view ?? view; const t = opts?.tab ?? activeTab; const tf = opts?.tf ?? chartTf
-    setSymbolState(s); if (opts?.view) setViewState(v); if (opts?.tab) setActiveTabState(t); if (opts?.tf) setChartTfState(tf)
-    writeHash(v, s, t, tf)
+  // 狀態 setter 包一層 → 同步寫回 URL hash（每個都接收完整新值，避免 closure stale）
+  const setSymbol = (s: string, opts?: { view?: ViewType; tab?: TabKey }) => {
+    const v = opts?.view ?? view; const tb = opts?.tab ?? activeTab
+    setSymbolState(s); if (opts?.view) setViewState(v); if (opts?.tab) setActiveTabState(tb)
+    writeHash(v, s, tb, chartTf)
   }
-  const setActiveTab = (t: string) => { setActiveTabState(t); writeHash(view, symbol, t, chartTf) }
+  const setActiveTab = (tb: TabKey) => { setActiveTabState(tb); writeHash(view, symbol, tb, chartTf) }
   const setChartTf = (tf: string) => { setChartTfState(tf); writeHash(view, symbol, activeTab, tf) }
   const setView = (v: ViewType) => { setViewState(v); writeHash(v, symbol, activeTab, chartTf) }
 
   // 大盤資料：法人資金動向 + 盤後統計（指數走勢由 MarketOverview 自行依時間區間抓取）
   const market = useAsync(() => api.moneyFlow(8), [])
 
-  // 全市場型態掃描 — state 住在 App，切頁面不重跑
+  // 全市場型態掃描（三線交纏 / 週W底）— state 住 App，切頁不重跑；掃描較重，由面板按鈕手動觸發
   const [scanMode, setScanMode] = useState<PatternScanMode>('both')
   const [scanData, setScanData] = useState<MarketPatternScanResponse | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
   const [scanAt, setScanAt] = useState<string | null>(null)
-
-  const runScan = () => {
+  const _runScan = (m: PatternScanMode) => {
     if (scanLoading) return
-    setScanLoading(true)
-    setScanError(null)
-    api.marketPatternScan(scanMode)
-      .then(r => { setScanData(r); setScanAt(new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })) })
-      .catch(e => setScanError(e.message ?? '掃描失敗'))
-      .finally(() => setScanLoading(false))
-  }
-
-  const handleScanModeChange = (m: PatternScanMode) => {
-    setScanMode(m)
-    if (scanLoading) return
-    setScanLoading(true)
-    setScanError(null)
+    setScanLoading(true); setScanError(null)
     api.marketPatternScan(m)
       .then(r => { setScanData(r); setScanAt(new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })) })
       .catch(e => setScanError(e.message ?? '掃描失敗'))
       .finally(() => setScanLoading(false))
   }
+  const runScan = () => _runScan(scanMode)
+  const handleScanModeChange = (m: PatternScanMode) => { setScanMode(m); _runScan(m) }
 
-  // 週線W底掃描
   const [wScanData, setWScanData] = useState<WeeklyWBottomScanResponse | null>(null)
   const [wScanLoading, setWScanLoading] = useState(false)
   const [wScanError, setWScanError] = useState<string | null>(null)
   const [wScanAt, setWScanAt] = useState<string | null>(null)
-
   const runWScan = () => {
     if (wScanLoading) return
-    setWScanLoading(true)
-    setWScanError(null)
+    setWScanLoading(true); setWScanError(null)
     api.weeklyWBottomScan()
       .then(r => { setWScanData(r); setWScanAt(new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })) })
       .catch(e => setWScanError(e.message ?? '掃描失敗'))
@@ -178,11 +177,11 @@ export default function App() {
   const backtest = useAsync(() => symbol ? api.backtest(symbol, btSignal) : Promise.resolve(null), [symbol, btSignal])
   // 只在切到該 tab 時才 fetch — 省 FinMind 配額 / 減少初次 render 等待時間
   const fundamentals = useAsync(
-    () => (symbol && activeTab === '基本面') ? api.fundamentals(symbol) : Promise.resolve(null),
+    () => (symbol && activeTab === 'fundamentals') ? api.fundamentals(symbol) : Promise.resolve(null),
     [symbol, activeTab],
   )
   const news = useAsync(
-    () => (symbol && activeTab === '新聞') ? api.news(symbol) : Promise.resolve(null),
+    () => (symbol && activeTab === 'news') ? api.news(symbol) : Promise.resolve(null),
     [symbol, activeTab],
   )
 
@@ -210,14 +209,14 @@ export default function App() {
     setInput(s.symbol)
     setSuggestions([])
     setShowSuggestions(false)
-    setSymbol(s.symbol, { view: 'stock', tab: '綜合研判' })
+    setSymbol(s.symbol, { view: 'stock', tab: 'outlook' })
   }
 
   // 從大盤排行等處點股票代碼 → 直接分析該股
   const goStock = (sym: string) => {
     setInput(sym)
     setShowSuggestions(false)
-    setSymbol(sym, { view: 'stock', tab: '綜合研判' })
+    setSymbol(sym, { view: 'stock', tab: 'outlook' })
   }
 
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
@@ -227,7 +226,7 @@ export default function App() {
     setShowSuggestions(false)
     // 若輸入的是中文且有建議，直接用第一筆
     const resolved = (!v.match(/^\d/) && suggestions.length > 0) ? suggestions[0].symbol : v
-    setSymbol(resolved, { view: 'stock', tab: '綜合研判' })
+    setSymbol(resolved, { view: 'stock', tab: 'outlook' })
   }
 
   return (
@@ -236,7 +235,7 @@ export default function App() {
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
           <button onClick={() => setView('market')} className="text-lg font-bold text-blue-400 hover:text-blue-300 shrink-0">
-            台股分析
+            {t('nav.title')}
           </button>
           <form onSubmit={handleSearch} className="flex gap-2 flex-1 max-w-sm relative" ref={searchRef}>
             <div className="flex-1 relative">
@@ -244,7 +243,7 @@ export default function App() {
                 value={input}
                 onChange={e => { setInput(e.target.value); setShowSuggestions(true) }}
                 onFocus={() => setShowSuggestions(true)}
-                placeholder="代碼或中文名稱，如 2330 / 台積電"
+                placeholder={t('nav.search_placeholder')}
                 className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
               />
               {showSuggestions && suggestions.length > 0 && (
@@ -257,66 +256,72 @@ export default function App() {
                     >
                       <span className="font-medium text-blue-300">{s.symbol}</span>
                       <span className="text-slate-300 ml-2">{s.name}</span>
-                      <span className="text-slate-500 text-xs ml-auto">{s.market === 'twse' ? '上市' : '上櫃'}</span>
+                      <span className="text-slate-500 text-xs ml-auto">
+                        {s.market === 'twse' ? t('market_label.twse')
+                          : s.market === 'tpex' ? t('market_label.tpex')
+                          : s.market === 'us' ? t('market_label.us')
+                          : s.market}
+                      </span>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
             <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded-lg text-sm font-medium shrink-0">
-              查詢
+              {t('nav.search_button')}
             </button>
           </form>
           <nav className="flex items-center gap-3 text-sm shrink-0 ml-auto">
-            <button onClick={() => setView('market')}
-              className={view === 'market' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
-              大盤
-            </button>
-            <button onClick={() => setView('global')}
-              className={view === 'global' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
-              全球
-            </button>
-            <button onClick={() => setView('futures')}
-              className={view === 'futures' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
-              期貨
-            </button>
-            <button onClick={() => setView('macro')}
-              className={view === 'macro' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
-              總經
-            </button>
-            <button onClick={() => setView('scan')}
-              className={view === 'scan' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
-              掃描
-            </button>
+            {([
+              ['market', 'nav.market'],
+              ['global', 'nav.global'],
+              ['futures', 'nav.futures'],
+              ['macro', 'nav.macro'],
+              ['scan', 'nav.scan'],
+              ['compare', 'nav.compare'],
+              ['watchlist', 'nav.watchlist'],
+            ] as const).map(([v, key]) => (
+              <button key={v} onClick={() => setView(v)}
+                className={view === v ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
+                {t(key)}
+              </button>
+            ))}
             {symbol && (
               <button onClick={() => setView('stock')}
                 className={view === 'stock' ? 'text-blue-400 font-medium' : 'text-slate-400 hover:text-slate-200'}>
                 {symbol}
               </button>
             )}
+            {/* 語言切換 */}
+            <button onClick={() => { toggleLang(); /* 觸發 re-render */ }}
+              className="text-xs px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 ml-2"
+              title={`current: ${i18n.language}`}>
+              {t('common.lang_switch')}
+            </button>
           </nav>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        <Suspense fallback={<Spinner />}>
         {view === 'market' && (
-          <Card title="大盤總覽">
+          <Card title={t('card.market_overview')}>
             {market.error && <p className="text-red-400 text-sm">{market.error}</p>}
-            <ErrorBoundary label="大盤總覽">
+            <ErrorBoundary label={t('card.market_overview')}>
               <MarketOverview moneyFlow={market.data} onSelectStock={goStock} />
             </ErrorBoundary>
           </Card>
         )}
 
         {view === 'global' && (
-          <ErrorBoundary label="全球盤勢">
+          <ErrorBoundary label={t('nav.global')}>
             <GlobalPanel />
           </ErrorBoundary>
         )}
 
         {view === 'futures' && (
-          <Card title="期貨 / 國際商品">
-            <ErrorBoundary label="期貨">
+          <Card title={t('card.futures_commodities')}>
+            <ErrorBoundary label={t('nav.futures')}>
               <FuturesPanel />
             </ErrorBoundary>
           </Card>
@@ -324,16 +329,17 @@ export default function App() {
 
         {view === 'macro' && (
           <Card>
-            <ErrorBoundary label="總體經濟">
+            <ErrorBoundary label={t('nav.macro')}>
               <MacroPanel onJumpGlobal={() => setView('global')} />
             </ErrorBoundary>
           </Card>
         )}
 
+        {/* 全市場型態掃描（三線交纏帶量突破 + 週線W底突破）。面板內文目前為中文（尚未 i18n） */}
         {view === 'scan' && (
           <>
-            <Card title="三線交纏帶量突破 — 全市場掃描">
-              <ErrorBoundary label="三線交纏掃描">
+            <Card title={t('scan_view.tangle_title')}>
+              <ErrorBoundary label={t('scan_view.tangle_label')}>
                 <MarketPatternScanPanel
                   mode={scanMode}
                   onModeChange={handleScanModeChange}
@@ -346,8 +352,8 @@ export default function App() {
                 />
               </ErrorBoundary>
             </Card>
-            <Card title="週線W底突破 — 全市場掃描">
-              <ErrorBoundary label="週線W底掃描">
+            <Card title={t('scan_view.wbottom_title')}>
+              <ErrorBoundary label={t('scan_view.wbottom_label')}>
                 <WeeklyWBottomScanPanel
                   data={wScanData}
                   loading={wScanLoading}
@@ -361,112 +367,88 @@ export default function App() {
           </>
         )}
 
+        {view === 'compare' && (
+          <Card>
+            <ErrorBoundary label={t('nav.compare')}>
+              <CompareChart />
+            </ErrorBoundary>
+          </Card>
+        )}
+
+        {view === 'watchlist' && (
+          <Card>
+            <ErrorBoundary label={t('nav.watchlist')}>
+              <WatchlistPanel onSelectStock={goStock} />
+            </ErrorBoundary>
+          </Card>
+        )}
+
         {view === 'stock' && symbol && (
           <>
-            {/* K 線圖 */}
-            <Card>
-              {/* 股名 + 股價 大字 header */}
-              <div className="flex items-baseline gap-3 mb-3">
-                <span className="text-2xl font-bold text-white">
-                  {price.data?.name ?? symbol}
-                </span>
-                <span className="text-slate-400 text-base">{symbol}</span>
-                {(() => {
-                  const bars = price.data?.data
-                  const last = bars?.[bars.length - 1]
-                  if (!last) return null
-                  const prev = bars?.[bars.length - 2]
-                  const chg = prev ? last.close - prev.close : 0
-                  const chgPct = prev ? (chg / prev.close) * 100 : 0
-                  const up = chg >= 0
-                  return (
-                    <span className={`text-2xl font-bold ${up ? 'text-red-400' : 'text-green-400'}`}>
-                      {last.close.toFixed(2)}
-                      <span className="text-sm font-normal ml-2">
-                        {up ? '+' : ''}{chg.toFixed(2)} ({up ? '+' : ''}{chgPct.toFixed(2)}%)
-                      </span>
-                    </span>
-                  )
-                })()}
-              </div>
+            {/* 即時報價（Fugle，含五檔）— 台股/ETF 盤中每 3 秒更新 */}
+            <ErrorBoundary label={t('quote.live')}>
+              <LiveQuote symbol={symbol} />
+            </ErrorBoundary>
 
-              {/* 時間框架切換 */}
+            {/* K 線圖 */}
+            <Card title={`${symbol} · ${t('card.kline')}`}>
               <div className="flex flex-wrap gap-1 mb-3">
                 {CHART_TFS.map(o => (
                   <button key={o.tf} onClick={() => setChartTf(o.tf)}
                     className={`text-xs px-3 py-1 rounded-full ${chartTf === o.tf ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                    {o.label}
+                    {t(`kline_tf.${o.tf}`)}
                   </button>
                 ))}
               </div>
               {price.loading && <Spinner />}
               {price.data && (
                 // key 強制在切時間框架時整個重建，避免 lightweight-charts 內部殘留狀態
-                <ErrorBoundary label="K 線圖" onReset={() => setChartTf(chartTf)}>
+                <ErrorBoundary label={t('card.kline')} onReset={() => setChartTf(chartTf)}>
                   <PriceChart
                     key={`${symbol}-${chartTf}`}
                     data={price.data.data}
-                    mas={chartTf === 'intraday' ? EMPTY_MAS : mas}
+                    mas={chartTf === '1d' ? mas : EMPTY_MAS}
                     intraday={chartTf === 'intraday'}
                     previousClose={chartTf === 'intraday' ? (price.data.previousClose ?? null) : null}
                   />
                 </ErrorBoundary>
-              )}
-
-              {/* 均線圖例（日K 才顯示） */}
-              {chartTf !== 'intraday' && price.data && (
-                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
-                  {([
-                    { key: 'ma5',  label: 'MA5',  color: '#f59e0b' },
-                    { key: 'ma10', label: 'MA10', color: '#a78bfa' },
-                    { key: 'ma20', label: 'MA20', color: '#38bdf8' },
-                    { key: 'ma60', label: 'MA60', color: '#fb7185' },
-                    { key: 'ma120', label: 'MA120', color: '#4ade80' },
-                    { key: 'ma240', label: 'MA240', color: '#f97316' },
-                  ] as const).filter(m => mas[m.key]?.length).map(m => (
-                    <span key={m.key} className="flex items-center gap-1">
-                      <span className="inline-block w-5 h-0.5 rounded" style={{ backgroundColor: m.color }} />
-                      <span style={{ color: m.color }}>{m.label}</span>
-                    </span>
-                  ))}
-                </div>
               )}
             </Card>
 
             {/* Tab 切換 */}
             <div>
               <div className="flex gap-1 border-b border-slate-800 mb-4">
-                {TABS.map(t => (
-                  <button key={t} onClick={() => setActiveTab(t)}
-                    className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${activeTab === t ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
-                    {t}
+                {TAB_KEYS.map(key => (
+                  <button key={key} onClick={() => setActiveTab(key)}
+                    className={`px-4 py-2 text-sm -mb-px border-b-2 transition-colors ${activeTab === key ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                    {t(`tabs.${key}`)}
                   </button>
                 ))}
               </div>
 
               <Card>
-                <ErrorBoundary label={activeTab}>
-                  {activeTab === '綜合研判' && (
+                <ErrorBoundary label={t(`tabs.${activeTab}`)}>
+                  {activeTab === 'outlook' && (
                     outlook.loading ? <Spinner /> : <OutlookPanel data={outlook.data} />
                   )}
-                  {activeTab === '技術面' && (
+                  {activeTab === 'technical' && (
                     technical.loading ? <Spinner /> : <TechnicalPanel data={technical.data} />
                   )}
-                  {activeTab === '籌碼面' && (
-                    chip.loading ? <Spinner /> : <ChipPanel data={chip.data} />
+                  {activeTab === 'chip' && (
+                    chip.loading ? <Spinner /> : <ChipPanel data={chip.data} symbol={symbol} />
                   )}
-                  {activeTab === '回測' && (
+                  {activeTab === 'backtest' && (
                     backtest.loading
                       ? <Spinner />
                       : <BacktestPanel data={backtest.data} signal={btSignal} onSignalChange={setBtSignal} />
                   )}
-                  {activeTab === '型態' && symbol && (
+                  {activeTab === 'pattern' && symbol && (
                     <PatternPanel symbol={symbol} />
                   )}
-                  {activeTab === '基本面' && (
-                    fundamentals.loading ? <Spinner /> : <FundamentalsPanel data={fundamentals.data} />
+                  {activeTab === 'fundamentals' && (
+                    fundamentals.loading ? <Spinner /> : <FundamentalsPanel data={fundamentals.data} symbol={symbol} />
                   )}
-                  {activeTab === '新聞' && (
+                  {activeTab === 'news' && (
                     news.loading ? <Spinner /> : <NewsPanel news={news.data?.news} />
                   )}
                 </ErrorBoundary>
@@ -476,8 +458,9 @@ export default function App() {
         )}
 
         {view === 'stock' && !symbol && (
-          <p className="text-slate-500 text-center py-12">輸入股票代碼開始分析</p>
+          <p className="text-slate-500 text-center py-12">{t('common.stock_view_hint')}</p>
         )}
+        </Suspense>
       </main>
     </div>
   )

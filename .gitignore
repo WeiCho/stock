@@ -9,3 +9,5 @@ web/dist
 web/package-lock.json
 _start_backend.cmd
 _start_frontend.cmd
+.claude/
+*.log

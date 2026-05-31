@@ -30,6 +30,14 @@ def _tw_hhmm(epoch_us) -> int | None:
     except Exception:
         return None
 
+
+def _tw_time_str(epoch_us) -> str | None:
+    """epoch 微秒 → 台北時間 HH:MM:SS（即時報價時戳顯示用）。"""
+    try:
+        return datetime.fromtimestamp(epoch_us / 1_000_000, _TW).strftime("%H:%M:%S")
+    except Exception:
+        return None
+
 try:
     import certifi
     _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
@@ -132,6 +140,53 @@ async def intraday_candles(symbol: str, timeframe: str = "5") -> dict | None:
             if v is not None:
                 candles[k] = v
     return candles
+
+
+def _shape_quote(symbol: str, q: dict) -> dict:
+    """把 Fugle /intraday/quote 原始回應整理成精簡的即時報價（含五檔）。純函式，方便測試。"""
+    total = q.get("total") or {}
+
+    def _levels(side: str) -> list[dict]:
+        return [{"price": x.get("price"), "size": x.get("size")} for x in (q.get(side) or [])]
+
+    return {
+        "symbol": symbol,
+        "last": q.get("lastPrice") if q.get("lastPrice") is not None else q.get("closePrice"),
+        "previousClose": q.get("previousClose"),
+        "open": q.get("openPrice"),
+        "high": q.get("highPrice"),
+        "low": q.get("lowPrice"),
+        "avg": q.get("avgPrice"),
+        "change": q.get("change"),
+        "change_pct": q.get("changePercent"),
+        "volume": total.get("tradeVolume"),
+        "bids": _levels("bids"),
+        "asks": _levels("asks"),
+        "time": _tw_time_str(q.get("lastUpdated")),
+    }
+
+
+async def quote(symbol: str) -> dict | None:
+    """個股 / ETF 即時報價快照（Fugle /intraday/quote，含五檔）。盤中即時、收盤後回最後一盤。
+    ETF 與一般個股是同一組 endpoint，無需特殊處理。失敗回 None（含狀態碼 log）。"""
+    key = _api_key()
+    if not key:
+        log.warning("Fugle: 未設定 FUGLE_API_KEY，無法取得即時報價")
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=6, verify=_SSL_CTX,
+                                     headers={"X-API-KEY": key}) as client:
+            r = await client.get(f"{FUGLE_BASE}/intraday/quote/{symbol}")
+            r.raise_for_status()
+            raw = r.json()
+    except httpx.HTTPStatusError as e:
+        body = e.response.text[:200].replace("\n", " ").replace("\r", " ")
+        log.warning("Fugle quote %s 失敗 HTTP %s：%s", symbol, e.response.status_code, body)
+        return None
+    except Exception as e:
+        log.warning("Fugle quote %s 失敗：%s", symbol, e)
+        return None
+    return _shape_quote(symbol, raw)
 
 
 async def scan_big_orders(symbols: list[str], min_amount: int = 30_000_000,

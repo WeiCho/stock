@@ -22,12 +22,13 @@ def _make_df(closes: list[float], opens: list[float] | None = None,
 
 
 class TestSignalRegistry:
-    def test_eleven_signals_registered(self):
-        """新增 best_four_buy/sell 後，總共 11 個訊號。"""
+    def test_signal_registry(self):
+        """核心 9 + best_four_buy/sell + weekly_w_bottom（週線W底掃描）= 12 個訊號。"""
         keys = set(backtest.SUPPORTED_SIGNALS.keys())
         assert "best_four_buy" in keys
         assert "best_four_sell" in keys
-        assert len(keys) == 11
+        assert "weekly_w_bottom" in keys
+        assert len(keys) == 12
 
     def test_all_signals_have_chinese_label(self):
         for k, v in backtest.SUPPORTED_SIGNALS.items():

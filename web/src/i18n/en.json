@@ -1,0 +1,591 @@
+{
+  "nav": {
+    "title": "TW Stock",
+    "market": "Market",
+    "global": "Global",
+    "futures": "Futures",
+    "macro": "Macro",
+    "compare": "Compare",
+    "watchlist": "Watchlist",
+    "search_placeholder": "Ticker or name, e.g. 2330 / AAPL / Apple",
+    "search_button": "Search",
+    "scan": "Scan"
+  },
+  "market_label": {
+    "twse": "TWSE",
+    "tpex": "TPEx",
+    "us": "US"
+  },
+  "tabs": {
+    "outlook": "Outlook",
+    "technical": "Technical",
+    "chip": "Inst. Flow",
+    "backtest": "Backtest",
+    "fundamentals": "Fundamentals",
+    "news": "News",
+    "pattern": "Pattern"
+  },
+  "card": {
+    "market_overview": "Market Overview",
+    "kline": "Price Chart",
+    "futures_commodities": "Futures / Commodities"
+  },
+  "kline_tf": {
+    "intraday": "Today",
+    "1d": "1D",
+    "3d": "3D",
+    "5d": "5D",
+    "1w": "1W",
+    "3w": "3W",
+    "1mo": "1M"
+  },
+  "common": {
+    "loading": "Loading…",
+    "no_data": "No data",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "updating": "Updating…",
+    "remove": "Remove",
+    "add": "Add",
+    "error_prefix": "Component error",
+    "lang_switch": "中",
+    "stock_view_hint": "Enter a ticker to start"
+  },
+  "market": {
+    "prev_close": "Prev Close",
+    "unit_trillion": "T",
+    "unit_hundred_million": "00M",
+    "unit_lots": "lots",
+    "unit_stocks": "stocks",
+    "range": {
+      "intraday": "Today",
+      "3d": "3D",
+      "1m": "1M",
+      "3m": "3M",
+      "6m": "6M",
+      "1y": "1Y",
+      "5y": "5Y"
+    },
+    "big_orders_title": "🔥 Big Orders Today (large single trades, live intraday)",
+    "taiex_label": "TAIEX",
+    "last_5d": "5D",
+    "last_20d": "20D",
+    "movers_title": "📊 Market Movers",
+    "limit_up": "Limit Up",
+    "limit_down": "Limit Down",
+    "total_count": "Total",
+    "top_turnover": "💰 Top 5 by Turnover",
+    "top_gainers": "🔥 Top 5 Gainers",
+    "top_losers": "❄️ Top 5 Losers",
+    "after_hours_summary": "After-Hours Market Summary",
+    "post_close_note": "(post-close data)",
+    "turnover": "Turnover",
+    "advance_decline": "Advances / Declines",
+    "institutional_net_caption": "Institutional Net Buy/Sell (lots, source: TWSE listed)",
+    "foreign": "Foreign",
+    "trust": "Inv. Trust",
+    "dealer": "Dealer",
+    "institutional_total": "Total Institutions",
+    "sector_flow_caption": "Sector Money Flow (institutional net buy/sell, lots)",
+    "sector_inflow": "Inflow Sectors",
+    "sector_outflow": "Outflow Sectors",
+    "foreign_buy": "Foreign Net Buy",
+    "foreign_sell": "Foreign Net Sell",
+    "trust_buy": "Trust Net Buy",
+    "trust_sell": "Trust Net Sell"
+  },
+  "futures": {
+    "group": {
+      "tw_futures": "TW Futures",
+      "commodities": "Commodities"
+    },
+    "symbol": {
+      "TX": "TAIEX Futures",
+      "MTX": "Mini TAIEX",
+      "TE": "Electronics Futures",
+      "TF": "Finance Futures",
+      "GC": "Gold",
+      "CL": "Crude Oil WTI",
+      "SI": "Silver",
+      "HG": "Copper"
+    },
+    "range": {
+      "intraday": "Today",
+      "3d": "3D",
+      "5d": "5D",
+      "1w": "1W",
+      "2w": "2W",
+      "3w": "3W",
+      "1mo": "1M",
+      "3mo": "3M",
+      "6mo": "6M",
+      "ytd": "YTD",
+      "1y": "1Y",
+      "5y": "5Y",
+      "10y": "10Y"
+    },
+    "last_updated": "Last updated",
+    "inst": {
+      "title": "Institutional Open Interest (Net Contracts, Last 30 Days)",
+      "col_date": "Date",
+      "col_foreign": "Foreign",
+      "col_trust": "Inv. Trust",
+      "col_dealer": "Dealer",
+      "note": "Net contracts = open long − short positions; positive = bullish bias, negative = bearish bias. Source: FinMind."
+    }
+  },
+  "macro": {
+    "title": "Macro · Economy",
+    "subtitle": "5-layer framework: Macro → Liquidity → Price Action → Sentiment → Geopolitics. Data from Yahoo Finance",
+    "subtitle_fred_on": " + FRED (US economic fundamentals)",
+    "subtitle_fred_off": "; inflation/GDP/employment require FRED API",
+    "loading_indicators": "Loading 12 indicators…",
+    "section1_title": "🌍 1. Macro · Sets the Big Direction",
+    "metric": {
+      "us10y": "US 10Y Treasury",
+      "us5y": "US 5Y Treasury",
+      "dxy": "US Dollar Index",
+      "vix": "VIX Fear"
+    },
+    "fred_unavailable_list": "CPI / GDP / NFP / Fed Funds / Unemployment",
+    "requires_prefix": "Requires ",
+    "requires_env_mid": " (.env, ",
+    "free_signup": "free signup",
+    "paren_close": ")",
+    "logic_title": "📌 Interpretation",
+    "logic": {
+      "rate_hike": "Rate hike",
+      "rate_hike_effect": "→ Pressure on stocks / gold weak",
+      "rate_cut": "Rate cut",
+      "rate_cut_effect": "→ Stocks up / gold up",
+      "inflation_up": "Inflation rising",
+      "inflation_up_effect": "→ Gold up",
+      "recession": "Recession",
+      "recession_effect": "→ Defensive assets up"
+    },
+    "section2_title": "💵 2. Liquidity · Where the Money Flows",
+    "liquidity": {
+      "rate_intro": "Rates = cost of capital. 10Y Treasury yield",
+      "last_1y_prefix": " (1Y ",
+      "last_1y_suffix": ")",
+      "bullet_high_rate": "High rates → money back to bonds → pressure on stocks / gold",
+      "bullet_low_rate": "Low rates → money flows to stocks / risk assets",
+      "bullet_strong_dxy": "Strong DXY → capital flows back to US → pressure on emerging markets / gold"
+    },
+    "fx": {
+      "title_prefix": "💱 Major FX Rates (USD vs / ",
+      "title_suffix": ")",
+      "note": "USD/TWD ↑ favors exporters (semiconductors/electronics); USD/JPY ↑ pressures Japanese stocks / Asian bonds"
+    },
+    "section3_title": "📊 3. Price Action",
+    "gold_perf_title": "Gold GC (USD/oz) long-term performance",
+    "cross": {
+      "title": "🔗 Cross-Asset Relationships (important)",
+      "dxy_up": "DXY ↑",
+      "dxy_up_effect": "→ Gold ↓",
+      "rate_up": "Rates ↑",
+      "rate_up_effect": "→ Tech stocks ↓",
+      "risk_off_up": "Risk-off sentiment ↑",
+      "risk_off_up_effect": "→ Gold ↑ BTC ↑",
+      "strong_econ": "Strong economy",
+      "strong_econ_effect": "→ Stocks ↑"
+    },
+    "crypto": {
+      "title": "💎 3.5 Cryptocurrency · Top 10",
+      "total_cap": "Total Cap ",
+      "btc_dominance": "BTC Dominance ",
+      "eth_dominance": "ETH Dominance ",
+      "coins_suffix": " coins"
+    },
+    "section4_title": "📈 4. Positioning / Sentiment",
+    "vix": {
+      "label": "VIX Fear Index",
+      "extreme_fear": "🔴 Extreme fear → defensive",
+      "caution": "🟡 Caution",
+      "calm": "🟢 Calm (risk-on)"
+    },
+    "yield_curve": {
+      "label": "10Y - 2Y Yield Spread",
+      "fallback_note": "Requires FRED API"
+    },
+    "pcr": {
+      "label": "TAIEX Options PCR",
+      "fallback_note": "— TXO PCR"
+    },
+    "sentiment": {
+      "footnote": "PCR > 1.2 usually signals \"excessive fear\" (contrarian buy signal); < 0.7 \"excessive optimism\" (contrarian caution). An inverted yield curve has historically preceded recession within 6-18 months."
+    },
+    "section5_title": "🌐 5. Geopolitics · Source of Black Swans",
+    "geopolitics": {
+      "watch": "Watch list: wars (Russia-Ukraine, Middle East) / US elections / sanctions / oil supply chains",
+      "jump_button": "Go to the \"Global\" page for the latest news →"
+    },
+    "section6_title": "📅 6. Economic Events (Next 30 Days) · Calendar",
+    "calendar": {
+      "count_suffix": " events",
+      "free_signup": "free signup →",
+      "col_datetime": "Date / Time",
+      "col_country": "Country",
+      "col_event": "Event",
+      "col_prev": "Previous",
+      "col_estimate": "Estimate",
+      "col_actual": "Actual",
+      "col_impact": "Impact",
+      "showing_prefix": "Showing first 30 of ",
+      "footnote": "🔴 high / 🟡 medium / ⚪ low · Source: Finnhub · German state-level entries, Prel interim revisions and holiday noise filtered out"
+    }
+  },
+  "fundamentals": {
+    "monthly_revenue_title": "📊 Monthly Revenue (MOPS · last 12 mo)",
+    "col_month": "Month",
+    "col_revenue_100m": "Revenue (00M)",
+    "col_mom": "MoM",
+    "col_yoy": "YoY",
+    "earnings_title": "📅 Earnings Dates (US, Finnhub)",
+    "col_date": "Date",
+    "col_eps_estimate": "EPS Est.",
+    "col_eps_actual": "EPS Actual",
+    "col_rev_estimate": "Rev. Est.",
+    "col_rev_actual": "Rev. Actual",
+    "insider_title": "🏛️ Insider Trading Form 4 (SEC EDGAR · {company} CIK {cik})",
+    "col_filing_date": "Filed",
+    "col_form": "Form",
+    "col_link": "Link",
+    "view_details": "View →",
+    "insider_note": "Form 4 = buy/sell activity filed by insiders (CEO/CFO/Director/10% holders) within 2 business days; heavy CEO buying is usually a strong bullish signal, while sustained selling (outside an automated sell plan) is a warning sign.",
+    "recommendations_title": "👥 Analyst Ratings (US, Finnhub · last 4 quarters)",
+    "rating_summary": "Strong Buy {strongBuy} · Buy {buy} · Hold {hold} · Sell {sell} · Strong Sell {strongSell} (total {total})",
+    "rating_strong_buy": "Strong Buy {n}",
+    "rating_buy": "Buy {n}",
+    "rating_hold": "Hold {n}",
+    "rating_sell": "Sell {n}",
+    "rating_strong_sell": "Strong Sell {n}",
+    "metric_eps": "Latest EPS",
+    "unit_twd": "",
+    "metric_pe": "P/E Ratio",
+    "metric_yield": "Dividend Yield",
+    "metric_revenue_mom": "Revenue MoM",
+    "metric_revenue_yoy": "Revenue YoY"
+  },
+  "chip": {
+    "unit_lots": "lots",
+    "cum_5d": "5D cumulative",
+    "foreign_holding_title": "🌏 Foreign Ownership (TDCC)",
+    "last_4w": "Last 4W",
+    "unit_pp": "pp",
+    "margin_short_title": "💳 Margin / Short Balance ({date})",
+    "margin_balance_label": "Margin Buy (retail long)",
+    "daily_change": "Daily change",
+    "short_balance_label": "Short Sell (retail short)",
+    "sec_lend_title": "📉 Securities Lending (foreign shorts, {date})",
+    "fee_rate": "Fee rate",
+    "sec_lend_hint": "Rising lending volume usually means institutions are building short positions; a rising fee means shares are hard to borrow (high short-squeeze risk)",
+    "row_foreign": "Foreign",
+    "row_trust": "Inv. Trust",
+    "row_dealer": "Dealer",
+    "three_total": "Three majors total"
+  },
+  "outlook": {
+    "bias": {
+      "bullish": "Bullish",
+      "bearish": "Bearish",
+      "neutral": "Neutral"
+    },
+    "summary_line": "Outlook · Close {close} · {trend}",
+    "expected_heading": "Expectation ({horizon_days} trading days, estimated from historical backtest)",
+    "based_on": "Based on",
+    "win_rate_label": "historical win rate",
+    "avg_return_label": "average return",
+    "target_label": "Target ~",
+    "range_label": "Historical range",
+    "low_sample_warning": "⚠ Small sample size ({sample_count} occurrences); low reliability",
+    "no_expected_fallback": "No clear backtest signal to estimate expectation; refer to support {support}, resistance {resistance}.",
+    "support_label": "Support",
+    "resistance_label": "Resistance",
+    "rationale_heading": "Rationale",
+    "no_signals": "No clear signal",
+    "factor": {
+      "trend_bullish": "Daily MA bullish alignment",
+      "trend_bearish": "Daily MA bearish alignment",
+      "rsi_hot": "RSI {{val}} overheated (chase risk)",
+      "rsi_cold": "RSI {{val}} oversold (deep dip)",
+      "macd_hist_pos": "MACD histogram positive",
+      "macd_hist_neg": "MACD histogram negative",
+      "foreign_buy_streak": "Foreign net buy {{days}}d streak",
+      "foreign_sell_streak": "Foreign net sell {{days}}d streak",
+      "trust_buy_streak": "Trust net buy {{days}}d streak",
+      "trust_sell_streak": "Trust net sell {{days}}d streak",
+      "backtest_winrate": "{{signal}}: 20D historical win rate {{wr}}%"
+    },
+    "disclaimer": "This outlook combines technical, institutional-flow, and 10-year backtest statistics for research reference only — not investment advice. Past statistics do not guarantee future results and exclude transaction costs."
+  },
+  "backtest": {
+    "fallback_signal": {
+      "ma_cross": "MA20×MA60 Golden Cross",
+      "ma_death": "MA20×MA60 Death Cross"
+    },
+    "triggered_prefix": "Triggered",
+    "triggered_suffix": "times",
+    "low_sample_warning": "Low sample",
+    "download_pine": "Download Pine",
+    "col_hold": "Hold",
+    "col_win_rate": "Win rate",
+    "col_avg_return": "Avg return",
+    "col_max_gain": "Max gain",
+    "col_max_loss": "Max loss",
+    "hold_days_unit": "D",
+    "recent_triggers": "Recent triggers: ",
+    "date_separator": ", ",
+    "signal": {
+      "ma_cross": "MA20×MA60 Golden Cross",
+      "ma_death": "MA20×MA60 Death Cross",
+      "kd_low_cross": "KD Low Golden Cross",
+      "kd_high_cross": "KD High Death Cross",
+      "macd_turn_pos": "MACD Turned Positive",
+      "macd_turn_neg": "MACD Turned Negative",
+      "rsi_oversold": "RSI Oversold",
+      "rsi_overbought": "RSI Overbought"
+    }
+  },
+  "global": {
+    "title": "Global Markets · Geopolitics",
+    "subtitle": "Asia, Europe, US markets + geopolitical keywords · Source: Google News · 30-min backend cache",
+    "last_fetched": "· Last fetched {time}",
+    "item_count": "{count} items",
+    "no_recent_news": "No news in the past 36 hours",
+    "time_ago": {
+      "minutes": "{n} min ago",
+      "hours": "{n} hr ago",
+      "days": "{n} days ago"
+    }
+  },
+  "watchlist": {
+    "indicator": {
+      "macd_hist": "MACD Hist",
+      "close": "Close"
+    },
+    "remove_confirm": "Remove {symbol} (and all its conditions)?",
+    "title": "Watchlist",
+    "description": "Track stocks and conditions; refreshing the page re-evaluates current status (no push notifications). A future Go alert engine will use this table for per-tick pushes.",
+    "reevaluate": "Re-evaluate",
+    "triggered_banner_suffix": "conditions currently triggered",
+    "add_section_title": "Add to Watchlist",
+    "symbol_placeholder": "Ticker, e.g. 2330",
+    "watching_count": "Watching ({count})",
+    "no_conditions": "No conditions yet",
+    "current_value_label": "now =",
+    "add_condition_section_title": "Add Condition",
+    "code_placeholder": "Ticker",
+    "add_condition_button": "Add Condition",
+    "condition_examples": "e.g. 2330 RSI < 30 (oversold, buy) / 2454 KD K > 80 (overbought warning) / 0050 Close > 150",
+    "empty_state": "No stocks watched yet. Enter a ticker to start tracking →",
+    "live_note": "Top 5 stream live (Fugle free tier: 5 max)"
+  },
+  "compare": {
+    "range": {
+      "1m": "1M",
+      "3m": "3M",
+      "6m": "6M",
+      "1y": "1Y",
+      "3y": "3Y",
+      "5y": "5Y"
+    },
+    "baseline": "Baseline",
+    "title": "Stock Comparison · Compare",
+    "subtitle": "Overlay multiple stocks/commodities normalized to 100 to compare relative strength. Taiwan tickers or international commodities (GC/SPX/BTC...) are supported. Up to 6 lines.",
+    "input_placeholder": "Enter a ticker, e.g. 2330 / 2454 / 0050 / GC / SPX / BTC",
+    "footnote": "All series are based at 100 on the first candle of the range to show relative strength. For example, 2330 going 100→130 vs 2454 going 100→110 means 2330 outperformed 2454 by 20% over the period."
+  },
+  "technical": {
+    "section": {
+      "ma": "Moving Averages",
+      "indicators": "Indicators"
+    },
+    "label": {
+      "rsi": "RSI(14)",
+      "macd": "MACD",
+      "macd_signal": "Signal ",
+      "kd": "KD",
+      "kd_k": "K",
+      "kd_d": "D",
+      "bb_upper": "BB Upper",
+      "bb_lower": "BB Lower",
+      "support": "Support",
+      "resistance": "Resistance"
+    },
+    "trend": {
+      "bullish": "Bullish Alignment",
+      "bearish": "Bearish Alignment",
+      "consolidating": "Consolidating",
+      "insufficient": "Insufficient Data"
+    },
+    "tf": {
+      "daily": "Daily",
+      "weekly": "Weekly"
+    },
+    "signal": {
+      "ma_golden": "{{tf}} MA Golden Cross",
+      "ma_death": "{{tf}} MA Death Cross",
+      "kd_golden_low": "KD Golden Cross (low, K<30)",
+      "kd_death_high": "KD Death Cross (high, K>70)",
+      "macd_hist_pos": "MACD Histogram Turned Positive",
+      "macd_hist_neg": "MACD Histogram Turned Negative",
+      "rsi_overbought": "RSI Overbought ({{val}})",
+      "rsi_oversold": "RSI Oversold ({{val}})",
+      "rsi_bear_div": "RSI Bearish Divergence (price high, RSI lower)",
+      "bb_squeeze_break": "Bollinger Squeeze Breakout"
+    }
+  },
+  "news": {
+    "empty": "No related news",
+    "major_badge": "Major"
+  },
+  "chart": {
+    "prev_close": "Prev Close",
+    "marker": {
+      "ma_golden": "MA Golden Cross",
+      "ma_death": "MA Death Cross",
+      "macd_golden": "MACD↑",
+      "macd_death": "MACD↓",
+      "kdj_low": "KDJ Low",
+      "kdj_high": "KDJ High"
+    },
+    "rsi_overbought": "Overbought",
+    "rsi_oversold": "Oversold"
+  },
+  "quote": {
+    "live": "Live",
+    "last": "Last",
+    "prev_close": "Prev",
+    "open": "O",
+    "high": "H",
+    "low": "L",
+    "avg": "Avg",
+    "volume": "Vol",
+    "bid": "Bid",
+    "ask": "Ask",
+    "five_levels": "Order Book"
+  },
+  "valuation": {
+    "title": "Valuation · TWSE official",
+    "low_per": "Lowest P/E",
+    "high_yield": "Highest Yield",
+    "per": "P/E"
+  },
+  "screen": {
+    "title": "📈 Bullish-setup screen · multi-factor",
+    "exclude_ob": "Exclude RSI overbought (earlier setups)",
+    "disclaimer": "Research signals, not investment advice; EOD data, no backtest, past ≠ future.",
+    "mode_momentum": "Momentum",
+    "mode_steady": "Steady",
+    "target": "Target≈"
+  },
+  "scan_view": {
+    "tangle_title": "Three-MA Tangle Breakout — Market Scan",
+    "tangle_label": "Tangle scan",
+    "wbottom_title": "Weekly W-Bottom Breakout — Market Scan",
+    "wbottom_label": "Weekly W-bottom scan"
+  },
+  "scan_panel": {
+    "direction_up": "↗ Rising",
+    "direction_down": "↘ Falling",
+    "col_symbol_name": "Symbol / Name",
+    "col_close": "Close",
+    "col_ma60": "MA60",
+    "col_ma60_gap": "Gap to MA60",
+    "col_ma60_direction": "MA60 Direction",
+    "col_prev_vol_threshold": "Prev Vol / Threshold",
+    "col_last_trigger": "Last Triggered",
+    "mode_both": "All (Breakout + Setup)",
+    "mode_triggered": "Breakout Done",
+    "mode_setup": "Setup",
+    "scanning": "Scanning…",
+    "rescan": "Rescan",
+    "scanning_first_time": "Scanning, first run takes about 30–60s…",
+    "scan_summary": "Scanned {scanned} stocks · Data date {asOf} · Updated {updatedAt}",
+    "intro_title": "Three-MA Convergence Volume Breakout of MA60 — Full Market Scan",
+    "intro_triggered_label": "Breakout Done",
+    "intro_triggered_desc": ": MA5/10/20 converged (gap < 3%) + yesterday on volume (> 1.5× avg) + held above MA60 for 2 days + still below MA60 the day before",
+    "intro_setup_label": "Setup",
+    "intro_setup_desc": ": Three MAs converged + close above MA5/MA10/MA20 + within 3% of MA60 (awaiting volume breakout)",
+    "intro_hint": "Click \"Rescan\" to start. The first run takes about 10–60s depending on DB size; later runs return from cache.",
+    "loading_text": "Scanning patterns across all Taiwan stocks, please wait…",
+    "triggered_title": "Breakout Done",
+    "triggered_badge": "Volume breakout of MA60, confirmed holding for 2 days",
+    "triggered_empty": "No breakout stocks today",
+    "setup_title": "Setup",
+    "setup_badge": "Three MAs converged + within 3% of MA60, awaiting breakout confirmation",
+    "setup_empty": "No setup stocks today",
+    "disclaimer": "Historical patterns do not indicate future performance; for research reference only."
+  },
+  "wbottom_panel": {
+    "dir_up": "↗ Up",
+    "dir_down": "↘ Down",
+    "scanning": "Scanning…",
+    "rescan": "Rescan",
+    "scanning_first_hint": "Scanning, the first run takes about 30–90 seconds…",
+    "scan_summary": "Scanned {scanned} stocks · Data date {asOf} · Updated {updatedAt}",
+    "intro_title": "Weekly W-bottom breakout — full-market scan",
+    "cond_label": "Condition {n}",
+    "cond1_desc": "This week's close just crossed above the weekly MA20 (still below last week)",
+    "cond2_desc": "Weekly MA20 sloping up (this week > 3 weeks ago, MA turning bullish)",
+    "cond3_desc": "W-bottom formed within the last 40 weeks (higher lows + a peak in between)",
+    "cond4_desc": "Volume surge this week (> 1.5× the 10-week average volume)",
+    "intro_footer": "Click “Rescan” to start. The first run takes about 30–90 seconds depending on DB size; later runs return cached results instantly.",
+    "scanning_full_market": "Scanning weekly patterns across all Taiwan stocks, please wait…",
+    "results_title": "W-bottom breakout completed",
+    "count_suffix": "{count} stocks",
+    "four_conditions_met": "All four conditions met simultaneously (weekly K)",
+    "no_matches": "No stocks match the weekly W-bottom breakout today",
+    "col_symbol_name": "Symbol / Name",
+    "col_close": "Close",
+    "col_ma20w": "Weekly MA20",
+    "col_gap_to_ma20": "Gap to MA20",
+    "col_ma20_direction": "MA20 direction",
+    "col_week_vol_threshold": "Weekly vol / Threshold",
+    "col_hist_count": "Historical count",
+    "col_last_trigger": "Last trigger",
+    "disclaimer": "Past patterns do not guarantee future performance; for research reference only."
+  },
+  "pattern_panel": {
+    "load_failed": "Failed to load",
+    "reason": {
+      "tangle": "MA5/MA10/MA20 lines entangled (spread {spread}, threshold {threshold})",
+      "tangle_insufficient": "Insufficient data for MA5/MA10/MA20 spread",
+      "above_three": "Close {close} above MA5/MA10/MA20",
+      "above_three_pending": "Close must rise above MA5/MA10/MA20",
+      "near_ma60": "Close is just {gap} ({gapPct}%) from MA60 ({ma60}), awaiting breakout",
+      "near_ma60_pending": "Close within 3% of MA60, awaiting volume breakout",
+      "support": "Yesterday's volume {prevVol} lots > threshold {threshold} lots (avg volume x 1.5)",
+      "support_pending": "Yesterday's volume must exceed 20-day avg x 1.5 (volume breakout)",
+      "above_ma20": "Close above MA60 ({ma60}) for 2 days; today's {close} confirms the hold",
+      "above_ma20_pending": "Both today's and yesterday's close above MA60 (held for 2 days)",
+      "first_break": "Two days ago close {prevClose} was still below MA60 ({prevMa60}); breakout just occurred",
+      "first_break_pending": "Two days ago still below MA60; breakout just occurred",
+      "ma60_up": "MA60 sloping up (slope +{slope}); no long-term resistance, strongest momentum",
+      "ma60_down": "MA60 still sloping down (slope {slope}); MA hasn't turned yet, explosive-type signal",
+      "ma60_flat": "MA60 flattening; minor overhead resistance"
+    },
+    "backtest_stats_title": "Post-trigger Return Statistics",
+    "col_hold_days": "Hold Days",
+    "col_sample": "Sample",
+    "col_win_rate": "Win Rate",
+    "col_avg_return": "Avg Return",
+    "col_max_gain": "Max Gain",
+    "col_max_loss": "Max Loss",
+    "hold_days_value": "{days}d",
+    "backtest_disclaimer": "Excludes commissions and transaction tax; past performance does not indicate future results.",
+    "waiting_prefix": "Waiting: ",
+    "missing_prefix": "Still needed: ",
+    "badge": {
+      "ma60_trend": "MA60 with trend",
+      "ma60_leading": "MA60 leading",
+      "building": "Building up"
+    },
+    "setup_section_title": "1. Setup Conditions (met = prepare to enter)",
+    "breakout_section_title": "2. Breakout Confirmation (fully triggered only when met; basis for backtest)",
+    "history_title": "Historical Triggers (past 10 years, {count} total)",
+    "low_sample_warning": "Insufficient samples; limited statistical significance",
+    "footer_disclaimer": "Historical patterns do not indicate future performance; for reference only."
+  }
+}
