@@ -1,39 +1,42 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import PriceChart from './PriceChart'
 import { useAsync } from '../hooks/useAsync'
 import { api } from '../api'
 import type { Bar } from '../types'
 
 // 期貨/商品符號清單 — 與 server/commodities.py 的 SUPPORTED 對齊
-const SYMBOLS: { symbol: string; label: string; group: '台股期貨' | '國際商品' }[] = [
-  { symbol: 'TX',     label: '台指期',   group: '台股期貨' },
-  { symbol: 'MTX',    label: '小台',     group: '台股期貨' },
-  { symbol: 'TE',     label: '電子期',   group: '台股期貨' },
-  { symbol: 'TF',     label: '金融期',   group: '台股期貨' },
-  { symbol: 'GC',     label: '黃金',     group: '國際商品' },
-  { symbol: 'XAUUSD', label: '黃金現貨', group: '國際商品' },
-  { symbol: 'CL',     label: '原油 WTI', group: '國際商品' },
-  { symbol: 'SI',     label: '白銀',     group: '國際商品' },
-  { symbol: 'HG',     label: '銅',       group: '國際商品' },
+// group 為後端分類邏輯值（用於 currency fallback 判斷），groupKey 為 i18n 顯示 key
+// labelKey 為 i18n 顯示 key（symbol 代碼本身不翻譯）
+const SYMBOLS: { symbol: string; labelKey: string; group: '台股期貨' | '國際商品'; groupKey: string }[] = [
+  { symbol: 'TX',     labelKey: 'futures.symbol.TX',  group: '台股期貨', groupKey: 'futures.group.tw_futures' },
+  { symbol: 'MTX',    labelKey: 'futures.symbol.MTX', group: '台股期貨', groupKey: 'futures.group.tw_futures' },
+  { symbol: 'TE',     labelKey: 'futures.symbol.TE',  group: '台股期貨', groupKey: 'futures.group.tw_futures' },
+  { symbol: 'TF',     labelKey: 'futures.symbol.TF',  group: '台股期貨', groupKey: 'futures.group.tw_futures' },
+  { symbol: 'GC',     labelKey: 'futures.symbol.GC',  group: '國際商品', groupKey: 'futures.group.commodities' },
+  { symbol: 'CL',     labelKey: 'futures.symbol.CL',  group: '國際商品', groupKey: 'futures.group.commodities' },
+  { symbol: 'SI',     labelKey: 'futures.symbol.SI',  group: '國際商品', groupKey: 'futures.group.commodities' },
+  { symbol: 'HG',     labelKey: 'futures.symbol.HG',  group: '國際商品', groupKey: 'futures.group.commodities' },
 ]
 
 // K 線時間框架 — 短週期跟個股頁對齊；長週期保留 perf 摘要用
 // tf='intraday' → Yahoo 5min 盤中 K（FinMind 期貨無 intraday）
 // 其他短週期（3d/5d/1w/2w/3w）→ 後端從日線 resample
-const RANGES: { label: string; tf: string; days: number }[] = [
-  { label: '當日', tf: 'intraday', days: 1 },
-  { label: '3日',  tf: '3d',  days: 60 },
-  { label: '5日',  tf: '5d',  days: 90 },
-  { label: '1週',  tf: '1w',  days: 180 },
-  { label: '2週',  tf: '2w',  days: 365 },
-  { label: '3週',  tf: '3w',  days: 540 },
-  { label: '1月',  tf: '1mo', days: 365 },
-  { label: '3月',  tf: '1d',  days: 90 },
-  { label: '6月',  tf: '1d',  days: 180 },
-  { label: 'YTD',  tf: '1d',  days: 365 },
-  { label: '1年',  tf: '1d',  days: 365 },
-  { label: '5年',  tf: '1d',  days: 1825 },
-  { label: '10年', tf: '1d',  days: 3650 },
+// id 為穩定 React key；labelKey 為 i18n 顯示 key
+const RANGES: { id: string; labelKey: string; tf: string; days: number }[] = [
+  { id: 'intraday', labelKey: 'futures.range.intraday', tf: 'intraday', days: 1 },
+  { id: '3d',  labelKey: 'futures.range.3d',  tf: '3d',  days: 60 },
+  { id: '5d',  labelKey: 'futures.range.5d',  tf: '5d',  days: 90 },
+  { id: '1w',  labelKey: 'futures.range.1w',  tf: '1w',  days: 180 },
+  { id: '2w',  labelKey: 'futures.range.2w',  tf: '2w',  days: 365 },
+  { id: '3w',  labelKey: 'futures.range.3w',  tf: '3w',  days: 540 },
+  { id: '1mo', labelKey: 'futures.range.1mo', tf: '1mo', days: 365 },
+  { id: '3mo', labelKey: 'futures.range.3mo', tf: '1d',  days: 90 },
+  { id: '6mo', labelKey: 'futures.range.6mo', tf: '1d',  days: 180 },
+  { id: 'ytd', labelKey: 'futures.range.ytd', tf: '1d',  days: 365 },
+  { id: '1y',  labelKey: 'futures.range.1y',  tf: '1d',  days: 365 },
+  { id: '5y',  labelKey: 'futures.range.5y',  tf: '1d',  days: 1825 },
+  { id: '10y', labelKey: 'futures.range.10y', tf: '1d',  days: 3650 },
 ]
 
 interface CommodityResponse {
@@ -66,6 +69,7 @@ function PerfChip({ label, value }: { label: string; value?: number }) {
 }
 
 export default function FuturesPanel() {
+  const { t } = useTranslation()
   const [symbol, setSymbol] = useState('TX')
   const [rangeIdx, setRangeIdx] = useState(10)  // 預設 1年（index 10）
   const range = RANGES[rangeIdx]
@@ -88,7 +92,10 @@ export default function FuturesPanel() {
   const prevClose = price.data?.previousClose
   const change = (latestPrice != null && prevClose != null) ? latestPrice - prevClose : null
   const changePct = (change != null && prevClose) ? (change / prevClose) * 100 : null
-  const currency = price.data?.currency ?? 'TWD'
+  // 用對應符號的「該來源預設幣別」當 fallback（503 時不再硬寫 TWD 誤導國際商品）
+  const symbolMeta = SYMBOLS.find(s => s.symbol === symbol)
+  const fallbackCcy = symbolMeta?.group === '台股期貨' ? 'TWD' : 'USD'
+  const currency = price.data?.currency ?? fallbackCcy
 
   // 依分類分組 symbol 選單
   const groups = useMemo(() => {
@@ -105,13 +112,13 @@ export default function FuturesPanel() {
       <div className="space-y-2">
         {Object.entries(groups).map(([group, items]) => (
           <div key={group} className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500 w-16 shrink-0">{group}</span>
+            <span className="text-xs text-slate-500 w-16 shrink-0">{t(items[0].groupKey)}</span>
             {items.map(s => (
               <button key={s.symbol} onClick={() => setSymbol(s.symbol)}
                 className={`text-xs px-3 py-1 rounded-full ${symbol === s.symbol
                   ? 'bg-blue-600 text-white'
                   : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                {s.label} <span className="text-[10px] opacity-60">{s.symbol}</span>
+                {t(s.labelKey)} <span className="text-[10px] opacity-60">{s.symbol}</span>
               </button>
             ))}
           </div>
@@ -131,18 +138,18 @@ export default function FuturesPanel() {
             </span>
           )}
           <span className="text-xs text-slate-500 ml-2">
-            {price.data?.label} ({symbol}) · 最後更新 {price.data?.data?.at(-1)?.date ?? '—'}
+            {price.data?.label} ({symbol}) · {t('futures.last_updated')} {price.data?.data?.at(-1)?.date ?? '—'}
           </span>
         </div>
 
         {/* 走勢區間：當日 / 3日 / 5日 / 週系列 / 月 / 長線 */}
         <div className="flex flex-wrap gap-1 mt-2">
           {RANGES.map((r, i) => (
-            <button key={r.label} onClick={() => setRangeIdx(i)}
+            <button key={r.id} onClick={() => setRangeIdx(i)}
               className={`text-xs px-2.5 py-0.5 rounded ${rangeIdx === i
                 ? 'bg-blue-600 text-white'
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-              {r.label}
+              {t(r.labelKey)}
             </button>
           ))}
         </div>
@@ -159,7 +166,7 @@ export default function FuturesPanel() {
 
       {/* K 線圖（重用 PriceChart；非盤中模式自動帶 RSI/KDJ 副圖 + MACD/KDJ markers） */}
       {price.error && <p className="text-red-400 text-sm">{price.error}</p>}
-      {price.loading && <p className="text-slate-500 text-sm">載入中…</p>}
+      {price.loading && <p className="text-slate-500 text-sm">{t('common.loading')}</p>}
       {price.data?.data && price.data.data.length > 0 && (
         <PriceChart
           key={`${symbol}-${range.tf}-${range.days}`}
@@ -172,14 +179,14 @@ export default function FuturesPanel() {
       {/* 期貨三大法人留倉淨口數 */}
       {isTwFutures && inst.data?.data && inst.data.data.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-slate-300 mb-2">三大法人留倉（淨口數，近 30 天）</h3>
+          <h3 className="text-sm font-semibold text-slate-300 mb-2">{t('futures.inst.title')}</h3>
           <table className="w-full text-xs">
             <thead>
               <tr className="text-slate-500 border-b border-slate-700">
-                <th className="text-left py-1.5 pr-3">日期</th>
-                <th className="text-right pr-3">外資</th>
-                <th className="text-right pr-3">投信</th>
-                <th className="text-right">自營商</th>
+                <th className="text-left py-1.5 pr-3">{t('futures.inst.col_date')}</th>
+                <th className="text-right pr-3">{t('futures.inst.col_foreign')}</th>
+                <th className="text-right pr-3">{t('futures.inst.col_trust')}</th>
+                <th className="text-right">{t('futures.inst.col_dealer')}</th>
               </tr>
             </thead>
             <tbody>
@@ -200,7 +207,7 @@ export default function FuturesPanel() {
             </tbody>
           </table>
           <p className="text-xs text-slate-600 mt-2">
-            淨口數 = 未平倉多單 − 空單口數；正值偏多、負值偏空。資料來源 FinMind。
+            {t('futures.inst.note')}
           </p>
         </div>
       )}

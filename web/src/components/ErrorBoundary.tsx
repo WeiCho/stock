@@ -1,4 +1,5 @@
 import { Component, ReactNode } from 'react'
+import { withTranslation, WithTranslation } from 'react-i18next'
 
 /**
  * React 錯誤邊界：捕住 children 在 render / lifecycle 拋出的錯誤，
@@ -11,10 +12,10 @@ import { Component, ReactNode } from 'react'
  * 注意：error boundary 抓不到 async / setTimeout / event handler 內的錯誤，
  * 那些要靠 try-catch + setState 把錯誤搬回 render path。
  */
-type Props = { children: ReactNode; label?: string; onReset?: () => void }
+type Props = { children: ReactNode; label?: string; onReset?: () => void } & WithTranslation
 type State = { error: Error | null }
 
-export default class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null }
 
   static getDerivedStateFromError(error: Error): State {
@@ -33,18 +34,21 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     const { error } = this.state
+    const { t } = this.props
     if (!error) return this.props.children
     return (
       <div className="bg-red-950/40 border border-red-800/50 rounded-lg p-4 text-sm">
         <p className="text-red-300 font-medium mb-1">
-          {this.props.label ? `${this.props.label} ` : ''}元件發生錯誤
+          {this.props.label ? `${this.props.label} ` : ''}{t('common.error_prefix')}
         </p>
         <p className="text-red-400/80 font-mono text-xs mb-3 break-all">{error.message}</p>
         <button onClick={this.reset}
           className="text-xs px-3 py-1 rounded bg-red-700/40 hover:bg-red-700/60 text-red-100">
-          重試
+          {t('common.retry')}
         </button>
       </div>
     )
   }
 }
+
+export default withTranslation()(ErrorBoundary)

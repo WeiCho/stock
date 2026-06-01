@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   createChart, createSeriesMarkers,
   CandlestickSeries, BaselineSeries, LineSeries, HistogramSeries,
   IChartApi, LineData, SeriesMarker, Time,
 } from 'lightweight-charts'
 import type { Bar, MaPoint } from '../types'
-import { macd as calcMacd } from '../indicators'
+import { rsi as calcRsi, kdj as calcKdj, macd as calcMacd } from '../indicators'
 import { toTime, SESSION_MINUTES } from '../lib/charts'
 
 function detectCrosses(a: { value: number }[], b: { value: number }[]) {
@@ -26,6 +27,7 @@ const MA_COLORS: Record<string, string> = {
 
 export default function PriceChart({ data, mas = {}, intraday = false, previousClose = null }:
   { data?: Bar[]; mas?: Record<string, MaPoint[]>; intraday?: boolean; previousClose?: number | null }) {
+  const { t: tr } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
 
@@ -46,11 +48,11 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
         fixRightEdge: true,
         tickMarkFormatter: intraday
           ? (t: number) => {
-              const d = new Date((t as number) * 1000)
-              const hh = d.toLocaleString('en-US', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false })
-              const mm = d.toLocaleString('en-US', { timeZone: 'Asia/Taipei', minute: '2-digit' })
-              return mm === '00' ? hh : `${hh}:${mm.padStart(2, '0')}`
-            }
+            const d = new Date((t as number) * 1000)
+            const hh = d.toLocaleString('en-US', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false })
+            const mm = d.toLocaleString('en-US', { timeZone: 'Asia/Taipei', minute: '2-digit' })
+            return mm === '00' ? hh : `${hh}:${mm.padStart(2, '0')}`
+          }
           : undefined,
       },
       width: el.clientWidth,
@@ -68,7 +70,10 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
         lineWidth: 2, priceLineVisible: false,
       })
       base.setData(data.map(r => ({ time: toTime(r.date), value: r.close })))
-      base.createPriceLine({ price: previousClose, color: '#64748b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '昨收' })
+      base.createPriceLine({
+        price: previousClose,
+        color: '#64748b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: tr('chart.prev_close'),
+      })
     } else {
       candle = chart.addSeries(CandlestickSeries, {
         upColor: '#ef4444', downColor: '#22c55e',
@@ -109,10 +114,11 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
           if (m20 == null || m60 == null) continue
           const diff = m20 - m60
           if (prevDiff !== null) {
-            if (prevDiff <= 0 && diff > 0)
-              allMarkers.push({ time: t, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'MA金叉' })
-            else if (prevDiff >= 0 && diff < 0)
-              allMarkers.push({ time: t, position: 'aboveBar', color: '#22c55e', shape: 'arrowDown', text: 'MA死叉' })
+            if (prevDiff <= 0 && diff > 0) {
+              allMarkers.push({ time: t, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: tr('chart.marker.ma_golden') })
+            } else if (prevDiff >= 0 && diff < 0) {
+              allMarkers.push({ time: t, position: 'aboveBar', color: '#22c55e', shape: 'arrowDown', text: tr('chart.marker.ma_death') })
+            }
           }
           prevDiff = diff
         }
@@ -127,7 +133,7 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
             position: c.type === 'golden' ? 'belowBar' : 'aboveBar',
             color: c.type === 'golden' ? '#fb923c' : '#94a3b8',
             shape: 'circle',
-            text: c.type === 'golden' ? 'MACD↑' : 'MACD↓',
+            text: c.type === 'golden' ? tr('chart.marker.macd_golden') : tr('chart.marker.macd_death'),
           })
         })
       }
@@ -142,6 +148,45 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
         color: r.close >= r.open ? '#ef444488' : '#22c55e88',
       })))
 
+      // ───── RSI 副圖（pane 2）── 0-100 帶 30/70 超買超賣參考線
+      const rsiData = calcRsi(data, 14)
+      if (rsiData.length > 0) {
+        const rsiSeries = chart.addSeries(LineSeries, {
+          color: '#a78bfa', lineWidth: 1, priceLineVisible: false,
+          priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+        }, 2)
+        rsiSeries.setData(rsiData as unknown as LineData<Time>[])
+        rsiSeries.createPriceLine({ price: 70, color: '#64748b', lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: tr('chart.rsi_overbought') })
+        rsiSeries.createPriceLine({ price: 30, color: '#64748b', lineStyle: 2, lineWidth: 1, axisLabelVisible: true, title: tr('chart.rsi_oversold') })
+      }
+
+      // ───── KDJ 副圖（pane 3）── 進場時機（K/D 交叉，K<30 / K>70 才標記）
+      const kdjData = calcKdj(data, 9)
+      if (kdjData.k.length > 0) {
+        const kSeries = chart.addSeries(LineSeries, { color: '#facc15', lineWidth: 1, priceLineVisible: false }, 3)
+        const dSeries = chart.addSeries(LineSeries, { color: '#60a5fa', lineWidth: 1, priceLineVisible: false }, 3)
+        const jSeries = chart.addSeries(LineSeries, { color: '#f472b6', lineWidth: 1, priceLineVisible: false }, 3)
+        kSeries.setData(kdjData.k as unknown as LineData<Time>[])
+        dSeries.setData(kdjData.d as unknown as LineData<Time>[])
+        jSeries.setData(kdjData.j as unknown as LineData<Time>[])
+        const offset = data.length - kdjData.k.length  // kdj 從 bars[n-1] 起算
+        detectCrosses(kdjData.k, kdjData.d).forEach(c => {
+          const kVal = kdjData.k[c.i].value
+          // 只標記 K<30 黃金交叉（低檔進場）或 K>70 死亡交叉（高檔出場）— 過濾雜訊
+          if ((c.type === 'golden' && kVal < 30) || (c.type === 'death' && kVal > 70)) {
+            allMarkers.push({
+              time: toTime(data[c.i + offset].date),
+              position: c.type === 'golden' ? 'belowBar' : 'aboveBar',
+              color: c.type === 'golden' ? '#facc15' : '#a3a3a3',
+              shape: 'square',
+              text: c.type === 'golden' ? tr('chart.marker.kdj_low') : tr('chart.marker.kdj_high'),
+            })
+          }
+        })
+      }
+
+      // 一次套用所有 markers：MA / MACD / KDJ 三層訊號疊在 K 線上
+      // 「Top-Down」分析：MACD 看大方向（橙圓），KDJ 找進場（黃方），MA 看趨勢轉折（紅藍箭）
       if (candle && allMarkers.length > 0) {
         allMarkers.sort((a, b) => (a.time as number) - (b.time as number))
         createSeriesMarkers(candle, allMarkers)
@@ -179,7 +224,7 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
       obs.disconnect()
       chart.remove()
     }
-  }, [data, mas, intraday, previousClose])
+  }, [data, mas, intraday, previousClose, tr])
 
   return <div ref={containerRef} className="w-full rounded-lg" style={{ height: intraday ? 320 : 520 }} />
 }

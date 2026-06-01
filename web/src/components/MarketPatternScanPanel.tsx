@@ -1,4 +1,7 @@
+import { useTranslation } from 'react-i18next'
 import type { MarketPatternScanResponse, MarketPatternItem } from '../types'
+
+const interp = { interpolation: { prefix: '{', suffix: '}' } }
 
 type Mode = 'both' | 'triggered' | 'setup'
 
@@ -16,6 +19,7 @@ interface Props {
 }
 
 function ItemRow({ item, onSelect }: { item: MarketPatternItem; onSelect: (s: string) => void }) {
+  const { t } = useTranslation()
   const isUp = item.ma60_direction === 'up'
   return (
     <tr
@@ -35,7 +39,7 @@ function ItemRow({ item, onSelect }: { item: MarketPatternItem; onSelect: (s: st
       </td>
       <td className="py-2 px-3 text-center">
         <span className={`text-xs px-1.5 py-0.5 rounded-full ${isUp ? 'bg-green-900/60 text-green-300' : 'bg-slate-700 text-slate-400'}`}>
-          {isUp ? '↗ 上斜' : '↘ 下斜'}
+          {isUp ? t('scan_panel.direction_up') : t('scan_panel.direction_down')}
         </span>
       </td>
       <td className="py-2 px-3 text-right text-xs text-slate-500">
@@ -59,6 +63,7 @@ function ResultTable({
   emptyText: string
   onSelect: (s: string) => void
 }) {
+  const { t } = useTranslation()
   if (items.length === 0) {
     return (
       <div className="space-y-2">
@@ -75,20 +80,20 @@ function ResultTable({
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-slate-300">{title}</span>
-        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">{items.length} 檔</span>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">{items.length} {t('market.unit_stocks')}</span>
         <span className="text-xs text-slate-500">{badge}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs min-w-[560px]">
           <thead>
             <tr className="text-slate-500 text-left">
-              <th className="py-1.5 px-3 font-medium">代碼 / 名稱</th>
-              <th className="py-1.5 px-3 text-right font-medium">收盤</th>
-              <th className="py-1.5 px-3 text-right font-medium">MA60</th>
-              <th className="py-1.5 px-3 text-right font-medium">距MA60</th>
-              <th className="py-1.5 px-3 text-center font-medium">MA60 方向</th>
-              <th className="py-1.5 px-3 text-right font-medium">昨量 / 門檻</th>
-              <th className="py-1.5 px-3 text-right font-medium">上次觸發</th>
+              <th className="py-1.5 px-3 font-medium">{t('scan_panel.col_symbol_name')}</th>
+              <th className="py-1.5 px-3 text-right font-medium">{t('scan_panel.col_close')}</th>
+              <th className="py-1.5 px-3 text-right font-medium">{t('scan_panel.col_ma60')}</th>
+              <th className="py-1.5 px-3 text-right font-medium">{t('scan_panel.col_ma60_gap')}</th>
+              <th className="py-1.5 px-3 text-center font-medium">{t('scan_panel.col_ma60_direction')}</th>
+              <th className="py-1.5 px-3 text-right font-medium">{t('scan_panel.col_prev_vol_threshold')}</th>
+              <th className="py-1.5 px-3 text-right font-medium">{t('scan_panel.col_last_trigger')}</th>
             </tr>
           </thead>
           <tbody>
@@ -102,15 +107,16 @@ function ResultTable({
   )
 }
 
-const MODES: { value: Mode; label: string }[] = [
-  { value: 'both',      label: '全部（突破 + 蓄勢）' },
-  { value: 'triggered', label: '突破完成' },
-  { value: 'setup',     label: '蓄勢中' },
+const MODES: { value: Mode; labelKey: string }[] = [
+  { value: 'both',      labelKey: 'scan_panel.mode_both' },
+  { value: 'triggered', labelKey: 'scan_panel.mode_triggered' },
+  { value: 'setup',     labelKey: 'scan_panel.mode_setup' },
 ]
 
 export default function MarketPatternScanPanel({
   mode, onModeChange, data, loading, error, scannedAt, onRescan, onSelectStock,
 }: Props) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-4">
       {/* 控制列 */}
@@ -124,7 +130,7 @@ export default function MarketPatternScanPanel({
                 mode === m.value ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
               }`}
             >
-              {m.label}
+              {t(m.labelKey)}
             </button>
           ))}
         </div>
@@ -133,28 +139,33 @@ export default function MarketPatternScanPanel({
           disabled={loading}
           className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 transition-colors"
         >
-          {loading ? '掃描中…' : '重新掃描'}
+          {loading ? t('scan_panel.scanning') : t('scan_panel.rescan')}
         </button>
         <span className="text-xs text-slate-500">
-          {loading && '掃描中，首次約需 30–60 秒…'}
-          {!loading && data && `掃描 ${data.scanned} 檔 · 資料日 ${data.as_of ?? '—'} · ${scannedAt ? `${scannedAt} 更新` : ''}`}
+          {loading && t('scan_panel.scanning_first_time')}
+          {!loading && data && t('scan_panel.scan_summary', {
+            scanned: data.scanned,
+            asOf: data.as_of ?? '—',
+            updatedAt: scannedAt ?? '—',
+            ...interp,
+          })}
         </span>
       </div>
 
       {/* 說明：首次掃描前顯示 */}
       {!data && !loading && !error && (
         <div className="bg-slate-800/60 rounded-lg p-4 text-xs text-slate-400 leading-relaxed space-y-1.5">
-          <div className="text-slate-300 font-medium mb-1">三線交纏帶量突破 MA60 — 全市場掃描</div>
-          <div>・<span className="text-orange-400 font-medium">突破完成</span>：MA5/10/20 三線交纏（差距 &lt; 3%）+ 昨日帶量（&gt; 均量 1.5×）+ 連 2 日站上 MA60 + 前天仍在 MA60 下</div>
-          <div>・<span className="text-blue-400 font-medium">蓄勢中</span>：三線交纏 + 收盤站上 MA5/MA10/MA20 + 距 MA60 &lt; 3%（等待帶量突破）</div>
-          <div className="text-slate-500 mt-2">點擊「重新掃描」開始。第一次視 DB 資料量約需 10–60 秒，後續快取直接回傳。</div>
+          <div className="text-slate-300 font-medium mb-1">{t('scan_panel.intro_title')}</div>
+          <div>・<span className="text-orange-400 font-medium">{t('scan_panel.intro_triggered_label')}</span>{t('scan_panel.intro_triggered_desc')}</div>
+          <div>・<span className="text-blue-400 font-medium">{t('scan_panel.intro_setup_label')}</span>{t('scan_panel.intro_setup_desc')}</div>
+          <div className="text-slate-500 mt-2">{t('scan_panel.intro_hint')}</div>
         </div>
       )}
 
       {loading && (
         <div className="flex flex-col items-center py-10 gap-3">
           <div className="w-7 h-7 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-slate-400">正在掃描全台股型態，請稍候…</p>
+          <p className="text-sm text-slate-400">{t('scan_panel.loading_text')}</p>
         </div>
       )}
 
@@ -165,11 +176,11 @@ export default function MarketPatternScanPanel({
           {(mode === 'triggered' || mode === 'both') && (
             <div className="bg-slate-900/60 border border-orange-500/20 rounded-xl p-4">
               <ResultTable
-                title="突破完成"
-                badge="帶量突破 MA60，連 2 日確認站穩"
+                title={t('scan_panel.triggered_title')}
+                badge={t('scan_panel.triggered_badge')}
                 badgeClass="bg-orange-900/60 text-orange-300"
                 items={data.triggered}
-                emptyText="今日無突破完成個股"
+                emptyText={t('scan_panel.triggered_empty')}
                 onSelect={onSelectStock}
               />
             </div>
@@ -178,17 +189,17 @@ export default function MarketPatternScanPanel({
           {(mode === 'setup' || mode === 'both') && (
             <div className="bg-slate-900/60 border border-blue-500/20 rounded-xl p-4">
               <ResultTable
-                title="蓄勢中"
-                badge="三線交纏 + 距 MA60 &lt; 3%，等待突破確認"
+                title={t('scan_panel.setup_title')}
+                badge={t('scan_panel.setup_badge')}
                 badgeClass="bg-blue-900/60 text-blue-300"
                 items={data.setup}
-                emptyText="今日無蓄勢中個股"
+                emptyText={t('scan_panel.setup_empty')}
                 onSelect={onSelectStock}
               />
             </div>
           )}
 
-          <p className="text-xs text-slate-600">歷史型態不代表未來績效，僅供研究參考。</p>
+          <p className="text-xs text-slate-600">{t('scan_panel.disclaimer')}</p>
         </div>
       )}
     </div>

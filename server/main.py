@@ -1,13 +1,22 @@
 """FastAPI 後端主程式。"""
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 讀取專案根目錄 .env（FUGLE / FRED / FINNHUB / SEC_CONTACT_EMAIL…）。
+# 必須在 import 任何「會讀環境變數」的模組之前執行；override=False，不覆蓋已 export 的變數。
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
+import asyncio
 import threading
 import time as _time
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select, func
 
 # 路由用到的模組統一在頂層 import — 之前散在每個 route handler 裡面，
@@ -15,12 +24,23 @@ from sqlalchemy import select, func
 import backtest as bt
 import chip as chip_module
 import commodities
+import crypto
+import finnhub
 import fred
 import fugle
+import fugle_ws
+import fundamentals_extra
+import fx
+import market_movers
 import news_fundamental as nf
 import outlook
 import pine_exporter
+import screen as screen_module
+import sec
+import taifex
 import technical
+import twse_openapi
+import watchlist
 from db import (
     IndexData, Institutional, StockName, StockIndustry,
     get_session, init_db,
@@ -79,6 +99,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# gzip 壓縮：> 500 bytes 的 response 自動壓縮（K 線 / 法人歷史等大資料減 70-80% 體積）
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 # ──────────────────────────────────────────────
@@ -225,6 +247,50 @@ async def stock_intraday(symbol: str, timeframe: str = "5"):
     if not data:
         raise HTTPException(status_code=503, detail="盤中資料暫時無法取得")
     return data
+
+
+@app.get("/stock/{symbol}/quote")
+async def stock_quote(symbol: str):
+    """個股 / ETF 即時報價快照（Fugle，含五檔）。盤中即時、收盤後回最後一盤。需 FUGLE_API_KEY。"""
+    if not fugle.available():
+        raise HTTPException(status_code=503, detail="需設定 FUGLE_API_KEY")
+    data = await fugle.quote(symbol)
+    if not data:
+        raise HTTPException(status_code=503, detail="即時報價暫時無法取得")
+    return data
+
+
+@app.websocket("/ws/quotes")
+async def ws_quotes(ws: WebSocket):
+    """多檔即時報價串流（自選清單 / movers 各列）。瀏覽器送 {action:'subscribe', symbols:[≤5]}，
+    後端維護單一 Fugle WS（aggregates channel）並廣播回來。需 FUGLE_API_KEY。"""
+    await ws.accept()
+    if not fugle.available():
+        await ws.send_json({"event": "error", "message": "需設定 FUGLE_API_KEY"})
+        await ws.close()
+        return
+    client = fugle_ws.hub.add_client()
+
+    async def pump():  # hub queue → 瀏覽器
+        try:
+            while True:
+                await ws.send_json(await client.queue.get())
+        except Exception:
+            pass
+
+    pumper = asyncio.create_task(pump())
+    try:
+        while True:
+            data = await ws.receive_json()
+            if isinstance(data, dict) and data.get("action") == "subscribe":
+                await fugle_ws.hub.set_client_symbols(client, data.get("symbols") or [])
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        pumper.cancel()
+        await fugle_ws.hub.remove_client(client)
 
 
 @app.get("/market/index/intraday")
@@ -520,6 +586,185 @@ def macro_series(series_id: str, years: int = 3):
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@app.get("/market/macro/yield-curve")
+def macro_yield_curve(years: int = 5):
+    """美 10Y - 2Y 殖利率利差。倒掛 = 衰退預警。需 FRED_API_KEY。"""
+    return fred.yield_curve(years=years)
+
+
+@app.get("/market/crypto/top")
+def market_crypto_top(limit: int = 10):
+    """加密貨幣 top N（CoinGecko 免費 API）。"""
+    return crypto.top_markets(limit=limit)
+
+
+@app.get("/market/crypto/global")
+def market_crypto_global():
+    """加密貨幣全球統計（總市值、BTC/ETH dominance）。"""
+    return crypto.global_stats()
+
+
+@app.get("/market/fx")
+def market_fx(base: str = "USD"):
+    """匯率（USD 對 TWD/JPY/CNY/EUR/GBP/HKD/SGD）。"""
+    return fx.latest_rates(base=base)
+
+
+@app.get("/market/movers")
+def market_movers_rank(top: int = 10):
+    """全市場今日動態：成交額前 N / 漲幅前 N / 跌幅前 N / 成交量前 N + 漲跌停家數統計。
+    資料 T+0（盤後才有，盤中查到的是上一交易日資料）。"""
+    return market_movers.market_movers(top_n=top)
+
+
+@app.get("/market/valuation")
+def market_valuation(top: int = 10):
+    """全市場估值篩選（TWSE OpenAPI 官方，免費、免 key、免額度）：低本益比 + 高殖利率 各前 N。
+    僅上市；最近一交易日快照。"""
+    return twse_openapi.valuation_screen(top_n=top)
+
+
+@app.get("/market/screen")
+def market_screen(exclude_overbought: bool = True, min_foreign_days: int = 3,
+                  top: int = 15, mode: str = "momentum"):
+    """偏多候選多因子掃描：動能(放量/漲幅) + 籌碼(外資連買) + 技術(均線/訊號) + 估值。
+    mode=momentum（動能）| steady（穩步走多/慢慢長：強制未過熱 + 多頭 + 低波動加權，附 outlook 預期區間）。
+    exclude_overbought=True 排除 RSI 過熱者（找「尚未噴出」的較早設定）。研究訊號，非投資建議。"""
+    return screen_module.bullish_screen(
+        exclude_overbought=exclude_overbought, min_foreign_days=min_foreign_days, top=top, mode=mode)
+
+
+@app.get("/market/futures/pcr")
+def futures_pcr(days: int = 30):
+    """台指選擇權 Put/Call Ratio（成交量比 + 未平倉比）。資料源 FinMind。"""
+    return taifex.fetch_pcr(days=days)
+
+
+@app.get("/market/macro/calendar")
+def macro_calendar(days_ahead: int = 30, min_impact: str = "medium"):
+    """未來 N 天全球經濟事件日曆（FOMC / CPI / NFP / 央行決策等）。
+    min_impact: low / medium / high。資料源 Finnhub，需 FINNHUB_API_KEY。"""
+    return finnhub.economic_calendar(days_ahead=days_ahead, min_impact=min_impact)
+
+
+@app.get("/stock/{symbol}/earnings")
+def stock_earnings(symbol: str, days_back: int = 90, days_ahead: int = 90):
+    """個股財報日曆（主要美股）。需 FINNHUB_API_KEY。"""
+    return finnhub.earnings_calendar(symbol, days_back=days_back, days_ahead=days_ahead)
+
+
+@app.get("/stock/{symbol}/recommendations")
+def stock_recommendations(symbol: str):
+    """個股分析師評等趨勢（主要美股）。需 FINNHUB_API_KEY。"""
+    return finnhub.recommendations(symbol)
+
+
+@app.get("/stock/{symbol}/insider")
+def stock_insider(symbol: str, limit: int = 20):
+    """美股內部人交易（SEC EDGAR Form 4）。免費，無需 key。"""
+    return sec.insider_transactions(symbol, limit=limit)
+
+
+@app.get("/stock/{symbol}/monthly-revenue")
+def stock_monthly_revenue(symbol: str, months: int = 24):
+    """月營收（MOPS）+ MoM/YoY。每月 10 號公布上月。"""
+    return fundamentals_extra.monthly_revenue(symbol, months_back=months)
+
+
+@app.get("/stock/{symbol}/foreign-holding")
+def stock_foreign_holding(symbol: str, weeks: int = 26):
+    """外資持股比率（集保，週頻）+ 4 週變化。"""
+    return fundamentals_extra.foreign_shareholding(symbol, weeks_back=weeks)
+
+
+@app.get("/stock/{symbol}/margin-short")
+def stock_margin_short(symbol: str, days: int = 30):
+    """融資融券餘額（每日序列走 FinMind）。另附 TWSE 官方最新一日 `official_latest`
+    （免 FinMind 額度）。融資=散戶借錢買；融券=散戶放空。"""
+    result = fundamentals_extra.margin_short(symbol, days_back=days)
+    if isinstance(result, dict):
+        official = twse_openapi.margin_for(symbol)
+        if official:
+            result["official_latest"] = {**official, "source": "TWSE OpenAPI"}
+    return result
+
+
+@app.get("/stock/{symbol}/valuation")
+def stock_valuation(symbol: str):
+    """個股本益比 / 股價淨值比 / 殖利率（TWSE OpenAPI 官方，免費免額度；僅上市）。"""
+    return twse_openapi.valuation_for(symbol)
+
+
+@app.get("/stock/{symbol}/securities-lending")
+def stock_securities_lending(symbol: str, days: int = 30):
+    """借券賣出餘額（每日，外資放空主要管道）。"""
+    return fundamentals_extra.securities_lending(symbol, days_back=days)
+
+
+# ──────────────────────────────────────────────
+# Watchlist + 條件記錄
+# ──────────────────────────────────────────────
+
+from pydantic import BaseModel  # noqa: E402
+
+
+class WatchlistItem(BaseModel):
+    symbol: str
+    note: str | None = None
+
+
+class ConditionItem(BaseModel):
+    symbol: str
+    indicator: str  # rsi / kd_k / kd_d / macd_hist / close
+    op: str         # lt / gt
+    threshold: float
+
+
+@app.get("/watchlist")
+def watchlist_list():
+    """關注清單。"""
+    return {"items": watchlist.list_watchlist()}
+
+
+@app.post("/watchlist")
+def watchlist_add(payload: WatchlistItem):
+    """加入 symbol 到關注清單。"""
+    return watchlist.add_watchlist(payload.symbol, payload.note)
+
+
+@app.delete("/watchlist/{symbol}")
+def watchlist_remove(symbol: str):
+    """從關注清單移除（連同所有條件）。"""
+    return watchlist.remove_watchlist(symbol)
+
+
+@app.get("/watchlist/conditions")
+def watchlist_conditions(symbol: str | None = None):
+    """列條件（指定 symbol 則只回該股）。"""
+    return {"items": watchlist.list_conditions(symbol)}
+
+
+@app.post("/watchlist/conditions")
+def watchlist_add_condition(payload: ConditionItem):
+    """新增條件。indicator: rsi/kd_k/kd_d/macd_hist/close；op: lt/gt"""
+    result = watchlist.add_condition(payload.symbol, payload.indicator, payload.op, payload.threshold)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.delete("/watchlist/conditions/{cid}")
+def watchlist_remove_condition(cid: int):
+    """刪條件。"""
+    return watchlist.remove_condition(cid)
+
+
+@app.get("/watchlist/status")
+def watchlist_status():
+    """評估所有啟用條件，回每條的目前值 + 是否觸發。"""
+    return watchlist.evaluate_all()
 
 
 @app.get("/stock/search")
