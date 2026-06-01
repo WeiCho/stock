@@ -70,7 +70,6 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
         lineWidth: 2, priceLineVisible: false,
       })
       base.setData(data.map(r => ({ time: toTime(r.date), value: r.close })))
-      base.createPriceLine({ price: previousClose, color: '#64748b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '昨收' })
       base.createPriceLine({
         price: previousClose,
         color: '#64748b', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: tr('chart.prev_close'),
@@ -115,10 +114,6 @@ export default function PriceChart({ data, mas = {}, intraday = false, previousC
           if (m20 == null || m60 == null) continue
           const diff = m20 - m60
           if (prevDiff !== null) {
-            if (prevDiff <= 0 && diff > 0)
-              allMarkers.push({ time: t, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: 'MA金叉' })
-            else if (prevDiff >= 0 && diff < 0)
-              allMarkers.push({ time: t, position: 'aboveBar', color: '#22c55e', shape: 'arrowDown', text: 'MA死叉' })
             if (prevDiff <= 0 && diff > 0) {
               allMarkers.push({ time: t, position: 'belowBar', color: '#ef4444', shape: 'arrowUp', text: tr('chart.marker.ma_golden') })
             } else if (prevDiff >= 0 && diff < 0) {
