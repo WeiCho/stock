@@ -8,7 +8,8 @@
     "compare": "對比",
     "watchlist": "關注",
     "search_placeholder": "代碼或中文名稱，如 2330 / 台積電",
-    "search_button": "查詢"
+    "search_button": "查詢",
+    "scan": "掃描"
   },
   "market_label": {
     "twse": "上市",
@@ -21,7 +22,8 @@
     "chip": "籌碼面",
     "backtest": "回測",
     "fundamentals": "基本面",
-    "news": "新聞"
+    "news": "新聞",
+    "pattern": "型態"
   },
   "card": {
     "market_overview": "大盤總覽",

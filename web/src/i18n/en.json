@@ -8,7 +8,8 @@
     "compare": "Compare",
     "watchlist": "Watchlist",
     "search_placeholder": "Ticker or name, e.g. 2330 / AAPL / Apple",
-    "search_button": "Search"
+    "search_button": "Search",
+    "scan": "Scan"
   },
   "market_label": {
     "twse": "TWSE",
@@ -21,7 +22,8 @@
     "chip": "Inst. Flow",
     "backtest": "Backtest",
     "fundamentals": "Fundamentals",
-    "news": "News"
+    "news": "News",
+    "pattern": "Pattern"
   },
   "card": {
     "market_overview": "Market Overview",

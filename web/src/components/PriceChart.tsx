@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   createChart, createSeriesMarkers,
   CandlestickSeries, BaselineSeries, LineSeries, HistogramSeries,
   IChartApi, LineData, SeriesMarker, Time,
 } from 'lightweight-charts'
-import { useTranslation } from 'react-i18next'
-import { createChart, createSeriesMarkers, CandlestickSeries, BaselineSeries, LineSeries, IChartApi, ISeriesApi, LineData, SeriesMarker, Time } from 'lightweight-charts'
 import type { Bar, MaPoint } from '../types'
-import { macd as calcMacd } from '../indicators'
+import { rsi as calcRsi, kdj as calcKdj, macd as calcMacd } from '../indicators'
 import { toTime, SESSION_MINUTES } from '../lib/charts'
 
 function detectCrosses(a: { value: number }[], b: { value: number }[]) {
