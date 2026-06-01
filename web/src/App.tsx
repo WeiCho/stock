@@ -36,6 +36,30 @@ const TAB_KEYS = ['outlook', 'technical', 'chip', 'backtest', 'pattern', 'fundam
 type TabKey = typeof TAB_KEYS[number]
 
 type ViewType = 'market' | 'stock' | 'global' | 'futures' | 'macro' | 'scan' | 'compare' | 'watchlist'
+const VALID_VIEWS = ['market', 'stock', 'global', 'futures', 'macro', 'scan', 'compare', 'watchlist'] as const
+
+// URL hash 深連結：載入時讀 #view=…&symbol=…&tab=…&tf=…，狀態變動時 replaceState 寫回（可分享/重整保留）
+function readHash(): { view: ViewType; symbol: string; tab: TabKey; tf: string } {
+  try {
+    const p = new URLSearchParams(location.hash.slice(1))
+    const v = p.get('view'); const tb = p.get('tab')
+    return {
+      view: (v && (VALID_VIEWS as readonly string[]).includes(v) ? v : 'market') as ViewType,
+      symbol: p.get('symbol') ?? '',
+      tab: (tb && (TAB_KEYS as readonly string[]).includes(tb) ? tb : 'outlook') as TabKey,
+      tf: p.get('tf') ?? '1d',
+    }
+  } catch {
+    return { view: 'market', symbol: '', tab: 'outlook', tf: '1d' }
+  }
+}
+function writeHash(view: ViewType, symbol: string, tab: string, tf: string) {
+  const p = new URLSearchParams()
+  p.set('view', view)
+  if (symbol) p.set('symbol', symbol)
+  p.set('tab', tab); p.set('tf', tf)
+  history.replaceState(null, '', '#' + p.toString())
+}
 
 // 穩定的空物件 reference — 避免每次 render 都產生新 `{}` 害 PriceChart effect 重跑
 const EMPTY_MAS: Record<string, MaPoint[]> = {}
@@ -87,15 +111,25 @@ function buildMas(priceData: PriceResponse | null, technicalData: TechnicalRespo
 
 export default function App() {
   const { t, i18n } = useTranslation()
-  const [symbol, setSymbol] = useState('')
-  const [input, setInput] = useState('')
-  const [activeTab, setActiveTab] = useState<TabKey>('outlook')
+  const [symbol, setSymbolState] = useState(() => readHash().symbol)
+  const [input, setInput] = useState(() => readHash().symbol)
+  const [activeTab, setActiveTabState] = useState<TabKey>(() => readHash().tab)
   const [btSignal, setBtSignal] = useState('ma_cross')
-  const [chartTf, setChartTf] = useState('1d')
-  const [view, setView] = useState<ViewType>('market')
+  const [chartTf, setChartTfState] = useState(() => readHash().tf)
+  const [view, setViewState] = useState<ViewType>(() => readHash().view)
   const [suggestions, setSuggestions] = useState<any[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const searchRef = useRef<HTMLFormElement>(null)
+
+  // 狀態 setter 包一層 → 同步寫回 URL hash（每個都接收完整新值，避免 closure stale）
+  const setSymbol = (s: string, opts?: { view?: ViewType; tab?: TabKey }) => {
+    const v = opts?.view ?? view; const tb = opts?.tab ?? activeTab
+    setSymbolState(s); if (opts?.view) setViewState(v); if (opts?.tab) setActiveTabState(tb)
+    writeHash(v, s, tb, chartTf)
+  }
+  const setActiveTab = (tb: TabKey) => { setActiveTabState(tb); writeHash(view, symbol, tb, chartTf) }
+  const setChartTf = (tf: string) => { setChartTfState(tf); writeHash(view, symbol, activeTab, tf) }
+  const setView = (v: ViewType) => { setViewState(v); writeHash(v, symbol, activeTab, chartTf) }
 
   // 大盤資料：法人資金動向 + 盤後統計（指數走勢由 MarketOverview 自行依時間區間抓取）
   const market = useAsync(() => api.moneyFlow(8), [])
@@ -175,18 +209,14 @@ export default function App() {
     setInput(s.symbol)
     setSuggestions([])
     setShowSuggestions(false)
-    setSymbol(s.symbol)
-    setView('stock')
-    setActiveTab('outlook')
+    setSymbol(s.symbol, { view: 'stock', tab: 'outlook' })
   }
 
   // 從大盤排行等處點股票代碼 → 直接分析該股
   const goStock = (sym: string) => {
     setInput(sym)
     setShowSuggestions(false)
-    setSymbol(sym)
-    setView('stock')
-    setActiveTab('outlook')
+    setSymbol(sym, { view: 'stock', tab: 'outlook' })
   }
 
   const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
@@ -196,9 +226,7 @@ export default function App() {
     setShowSuggestions(false)
     // 若輸入的是中文且有建議，直接用第一筆
     const resolved = (!v.match(/^\d/) && suggestions.length > 0) ? suggestions[0].symbol : v
-    setSymbol(resolved)
-    setView('stock')
-    setActiveTab('outlook')
+    setSymbol(resolved, { view: 'stock', tab: 'outlook' })
   }
 
   return (
@@ -310,8 +338,8 @@ export default function App() {
         {/* 全市場型態掃描（三線交纏帶量突破 + 週線W底突破）。面板內文目前為中文（尚未 i18n） */}
         {view === 'scan' && (
           <>
-            <Card title="三線交纏帶量突破 — 全市場掃描">
-              <ErrorBoundary label="三線交纏掃描">
+            <Card title={t('scan_view.tangle_title')}>
+              <ErrorBoundary label={t('scan_view.tangle_label')}>
                 <MarketPatternScanPanel
                   mode={scanMode}
                   onModeChange={handleScanModeChange}
@@ -324,8 +352,8 @@ export default function App() {
                 />
               </ErrorBoundary>
             </Card>
-            <Card title="週線W底突破 — 全市場掃描">
-              <ErrorBoundary label="週線W底掃描">
+            <Card title={t('scan_view.wbottom_title')}>
+              <ErrorBoundary label={t('scan_view.wbottom_label')}>
                 <WeeklyWBottomScanPanel
                   data={wScanData}
                   loading={wScanLoading}

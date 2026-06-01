@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { api } from '../api'
 import type { PatternScanResponse, PatternResult, PatternBacktestStat } from '../types'
+
+const interp = { interpolation: { prefix: '{', suffix: '}' } }
 
 interface Props { symbol: string }
 
@@ -17,7 +21,7 @@ function CheckRow({ ok, text, bonus = false }: { ok: boolean; text: string; bonu
   )
 }
 
-function buildReasons(p: PatternResult) {
+function buildReasons(p: PatternResult, t: TFunction) {
   const d = p.diagnostics
   const spread    = d.ma_spread ?? null
   const threshold = d.close != null ? +(d.close * 0.03).toFixed(2) : null
@@ -29,20 +33,20 @@ function buildReasons(p: PatternResult) {
     {
       ok: d.cond_tangle ?? false,
       text: spread != null && threshold != null
-        ? `MA5/MA10/MA20 三線交纏（差距 ${spread}，門檻 ${threshold}）`
-        : 'MA5/MA10/MA20 三線差距資料不足',
+        ? t('pattern_panel.reason.tangle', { spread, threshold, ...interp })
+        : t('pattern_panel.reason.tangle_insufficient'),
     },
     {
       ok: d.cond_above_three ?? false,
       text: d.close != null
-        ? `收盤 ${d.close} 站上 MA5/MA10/MA20 三線`
-        : '收盤須站上 MA5/MA10/MA20 三線',
+        ? t('pattern_panel.reason.above_three', { close: d.close, ...interp })
+        : t('pattern_panel.reason.above_three_pending'),
     },
     {
       ok: d.cond_near_ma60 ?? false,
       text: d.ma60_gap != null && d.ma60 != null && d.ma60_gap_pct != null
-        ? `收盤距 MA60（${d.ma60}）僅差 ${d.ma60_gap}（${d.ma60_gap_pct}%），等待突破`
-        : '收盤距 MA60 < 3%，等待帶量突破',
+        ? t('pattern_panel.reason.near_ma60', { ma60: d.ma60, gap: d.ma60_gap, gapPct: d.ma60_gap_pct, ...interp })
+        : t('pattern_panel.reason.near_ma60_pending'),
     },
   ]
 
@@ -51,20 +55,20 @@ function buildReasons(p: PatternResult) {
     {
       ok: d.cond_support ?? false,
       text: d.prev_vol != null && d.vol_threshold != null
-        ? `昨日帶量 ${d.prev_vol.toLocaleString()} 張 > 門檻 ${d.vol_threshold.toLocaleString()} 張（均量 × 1.5）`
-        : '昨日成交量需 > 20 日均量 × 1.5（帶量突破）',
+        ? t('pattern_panel.reason.support', { prevVol: d.prev_vol.toLocaleString(), threshold: d.vol_threshold.toLocaleString(), ...interp })
+        : t('pattern_panel.reason.support_pending'),
     },
     {
       ok: d.cond_above_ma20 ?? false,
       text: d.close != null && d.ma60 != null
-        ? `連續 2 日收盤站上 MA60（${d.ma60}），今日 ${d.close} 確認站穩`
-        : '今日與昨日收盤均站上 MA60（連續 2 日站穩）',
+        ? t('pattern_panel.reason.above_ma20', { ma60: d.ma60, close: d.close, ...interp })
+        : t('pattern_panel.reason.above_ma20_pending'),
     },
     {
       ok: d.cond_first_break ?? false,
       text: d.prev_close != null && d.prev_ma60 != null
-        ? `前天收 ${d.prev_close} 仍在 MA60（${d.prev_ma60}）以下，突破剛發生`
-        : '前天還在 MA60 以下，突破剛發生',
+        ? t('pattern_panel.reason.first_break', { prevClose: d.prev_close, prevMa60: d.prev_ma60, ...interp })
+        : t('pattern_panel.reason.first_break_pending'),
     },
   ]
 
@@ -75,28 +79,29 @@ function buildReasons(p: PatternResult) {
       {
         ok: ma60Up,
         text: ma60Up
-          ? `MA60 上斜（斜率 +${ma60Slope}），長線無壓，力道最強`
+          ? t('pattern_panel.reason.ma60_up', { slope: ma60Slope, ...interp })
           : ma60Slope != null && ma60Slope < 0
-            ? `MA60 仍在下斜（斜率 ${ma60Slope}），均線還沒轉，爆發型訊號`
-            : 'MA60 走平，上方壓力輕微',
+            ? t('pattern_panel.reason.ma60_down', { slope: ma60Slope, ...interp })
+            : t('pattern_panel.reason.ma60_flat'),
       },
     ],
   }
 }
 
 function BacktestStatsTable({ stats }: { stats: PatternBacktestStat[] }) {
+  const { t } = useTranslation()
   return (
     <div className="bg-slate-800/60 rounded-lg p-3">
-      <div className="text-xs text-slate-500 mb-3 font-medium uppercase tracking-wide">觸發後獲利統計</div>
+      <div className="text-xs text-slate-500 mb-3 font-medium uppercase tracking-wide">{t('pattern_panel.backtest_stats_title')}</div>
       <table className="w-full text-xs">
         <thead>
           <tr className="text-slate-500">
-            <th className="text-left pb-2 font-medium">持有天數</th>
-            <th className="text-right pb-2 font-medium">樣本</th>
-            <th className="text-right pb-2 font-medium">勝率</th>
-            <th className="text-right pb-2 font-medium">平均報酬</th>
-            <th className="text-right pb-2 font-medium">最大獲利</th>
-            <th className="text-right pb-2 font-medium">最大虧損</th>
+            <th className="text-left pb-2 font-medium">{t('pattern_panel.col_hold_days')}</th>
+            <th className="text-right pb-2 font-medium">{t('pattern_panel.col_sample')}</th>
+            <th className="text-right pb-2 font-medium">{t('pattern_panel.col_win_rate')}</th>
+            <th className="text-right pb-2 font-medium">{t('pattern_panel.col_avg_return')}</th>
+            <th className="text-right pb-2 font-medium">{t('pattern_panel.col_max_gain')}</th>
+            <th className="text-right pb-2 font-medium">{t('pattern_panel.col_max_loss')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-700/50">
@@ -105,7 +110,7 @@ function BacktestStatsTable({ stats }: { stats: PatternBacktestStat[] }) {
             const retColor = s.avg_return > 0 ? 'text-green-400' : 'text-red-400'
             return (
               <tr key={s.hold_days} className="text-slate-300">
-                <td className="py-1.5 text-slate-400">{s.hold_days} 日</td>
+                <td className="py-1.5 text-slate-400">{t('pattern_panel.hold_days_value', { days: s.hold_days, ...interp })}</td>
                 <td className="text-right py-1.5 text-slate-500">{s.sample_count}</td>
                 <td className={`text-right py-1.5 font-semibold ${winColor}`}>{s.win_rate}%</td>
                 <td className={`text-right py-1.5 font-semibold ${retColor}`}>{s.avg_return > 0 ? '+' : ''}{s.avg_return}%</td>
@@ -116,16 +121,17 @@ function BacktestStatsTable({ stats }: { stats: PatternBacktestStat[] }) {
           })}
         </tbody>
       </table>
-      <p className="text-xs text-slate-600 mt-2">未含手續費及證交稅，歷史績效不代表未來。</p>
+      <p className="text-xs text-slate-600 mt-2">{t('pattern_panel.backtest_disclaimer')}</p>
     </div>
   )
 }
 
 function PatternCard({ p }: { p: PatternResult }) {
+  const { t } = useTranslation()
   const triggered      = p.current.triggered
   const setupTriggered = p.current.setup_triggered ?? false
   const ma60Up         = p.current.ma60_direction === 'up'
-  const { setup, breakout, bonus } = buildReasons(p)
+  const { setup, breakout, bonus } = buildReasons(p, t)
 
   // 狀態卡樣式
   const borderColor = triggered
@@ -155,12 +161,12 @@ function PatternCard({ p }: { p: PatternResult }) {
           <div className="text-sm font-semibold text-slate-100">{p.current.label}</div>
           {!triggered && setupTriggered && failedBreakout.length > 0 && (
             <div className="text-xs text-slate-400 mt-1 leading-relaxed">
-              等待：{failedBreakout.map(r => r.text.split('（')[0]).join('、')}
+              {t('pattern_panel.waiting_prefix')}{failedBreakout.map(r => r.text.split('（')[0]).join('、')}
             </div>
           )}
           {!triggered && !setupTriggered && (
             <div className="text-xs text-slate-500 mt-1 leading-relaxed">
-              尚缺：{setup.filter(r => !r.ok).map(r => r.text.split('（')[0]).join('、')}
+              {t('pattern_panel.missing_prefix')}{setup.filter(r => !r.ok).map(r => r.text.split('（')[0]).join('、')}
             </div>
           )}
         </div>
@@ -168,25 +174,25 @@ function PatternCard({ p }: { p: PatternResult }) {
           <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${
             ma60Up ? 'bg-orange-900/60 text-orange-300' : 'bg-yellow-900/60 text-yellow-300'
           }`}>
-            {ma60Up ? 'MA60 順勢' : 'MA60 領先'}
+            {ma60Up ? t('pattern_panel.badge.ma60_trend') : t('pattern_panel.badge.ma60_leading')}
           </span>
         )}
         {!triggered && setupTriggered && (
           <span className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-300">
-            蓄勢中
+            {t('pattern_panel.badge.building')}
           </span>
         )}
       </div>
 
       {/* 條件進度：蓄勢條件 */}
       <div className="bg-slate-800/60 rounded-lg p-3 space-y-0.5">
-        <div className="text-xs text-slate-500 mb-2 font-medium">① 蓄勢條件（符合即可準備進場）</div>
+        <div className="text-xs text-slate-500 mb-2 font-medium">{t('pattern_panel.setup_section_title')}</div>
         {setup.map((r, i) => <CheckRow key={i} ok={r.ok} text={r.text} />)}
       </div>
 
       {/* 條件進度：突破確認條件 */}
       <div className="bg-slate-800/60 rounded-lg p-3 space-y-0.5">
-        <div className="text-xs text-slate-500 mb-2 font-medium">② 突破確認條件（符合才算完整觸發，回測以此計算）</div>
+        <div className="text-xs text-slate-500 mb-2 font-medium">{t('pattern_panel.breakout_section_title')}</div>
         {breakout.map((r, i) => <CheckRow key={i} ok={r.ok} text={r.text} />)}
         <div className="border-t border-slate-700/60 mt-2 pt-2">
           {bonus.map((r, i) => <CheckRow key={i} ok={r.ok} text={r.text} bonus />)}
@@ -195,7 +201,7 @@ function PatternCard({ p }: { p: PatternResult }) {
 
       {/* 歷史觸發 */}
       <div className="bg-slate-800/60 rounded-lg p-3">
-        <div className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">歷史觸發（近10年，共 {p.total_triggers} 次）</div>
+        <div className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">{t('pattern_panel.history_title', { count: p.total_triggers, ...interp })}</div>
         {p.trigger_dates.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {p.trigger_dates.map(d => (
@@ -204,7 +210,7 @@ function PatternCard({ p }: { p: PatternResult }) {
           </div>
         )}
         {p.total_triggers < 10 && (
-          <div className="mt-2 text-xs bg-yellow-900/40 text-yellow-300 px-2 py-1 rounded">樣本不足，統計意義有限</div>
+          <div className="mt-2 text-xs bg-yellow-900/40 text-yellow-300 px-2 py-1 rounded">{t('pattern_panel.low_sample_warning')}</div>
         )}
       </div>
 
@@ -217,6 +223,7 @@ function PatternCard({ p }: { p: PatternResult }) {
 }
 
 export default function PatternPanel({ symbol }: Props) {
+  const { t } = useTranslation()
   const [data, setData] = useState<PatternScanResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -226,11 +233,11 @@ export default function PatternPanel({ symbol }: Props) {
     setError(null)
     api.patternScan(symbol)
       .then(setData)
-      .catch(e => setError(e.message ?? '載入失敗'))
+      .catch(e => setError(e.message ?? t('pattern_panel.load_failed')))
       .finally(() => setLoading(false))
-  }, [symbol])
+  }, [symbol, t])
 
-  if (loading) return <div className="text-slate-500 text-sm py-4 text-center">載入中…</div>
+  if (loading) return <div className="text-slate-500 text-sm py-4 text-center">{t('common.loading')}</div>
   if (error)   return <div className="text-red-400 text-sm py-2">{error}</div>
   if (!data)   return null
 
@@ -240,7 +247,7 @@ export default function PatternPanel({ symbol }: Props) {
   return (
     <div className="space-y-4">
       <PatternCard p={pattern} />
-      <p className="text-xs text-slate-600">歷史型態不代表未來績效，僅供參考。</p>
+      <p className="text-xs text-slate-600">{t('pattern_panel.footer_disclaimer')}</p>
     </div>
   )
 }
